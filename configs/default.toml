@@ -3,10 +3,55 @@ N = 5                   # steps per roadmap
 C = 8                   # context compression interval
 K = 3                   # diminishing-returns window (no progress in K iters -> abandon)
 
+# Stop after Phase 1 (mathematical proof) without Lean formalization.
+# Set to true for quick testing; set to false for full verification.
+skip_lean = false
+
+# ---------------------------------------------------------------------------
+# Shared default provider -- used by any agent without its own [agents.X] block.
+# ---------------------------------------------------------------------------
 [provider]
-name = "anthropic"      # openai | anthropic | deepseek | gemini
-model = ""              # empty = provider default
+name = "anthropic"      # anthropic | openai | deepseek | gemini
+model = ""              # empty = provider default (e.g. claude-opus-4-0626)
 temperature = 0.7
+
+# ---------------------------------------------------------------------------
+# Per-agent provider overrides (optional).
+#
+# Leave a section out (or leave its "name" empty) to inherit [provider].
+# This lets you mix providers freely:
+#
+#   [agents.thinking]
+#   name = "openai"
+#   model = "gpt-5.4-xhigh"
+#
+#   [agents.assistant]
+#   name = "gemini"
+#   model = "gemini-3-flash"       # cheap + fast for summarization
+#
+#   [agents.review]
+#   name = "anthropic"
+#   model = "claude-sonnet-4.6"
+#
+#   [agents.cli]
+#   name = "anthropic"
+#   model = "claude-sonnet-4.6"    # good at Lean code
+# ---------------------------------------------------------------------------
+# [agents.thinking]
+# name = ""
+# model = ""
+
+# [agents.assistant]
+# name = ""
+# model = ""
+
+# [agents.review]
+# name = ""
+# model = ""
+
+# [agents.cli]
+# name = ""
+# model = ""
 
 [lean]
 toolchain = "leanprover/lean4:v4.14.0"

@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from math_agent.config import AppConfig
+from math_agent.config import (
+    AppConfig,
+    AgentProvider,
+    ProviderConfig,
+    resolve_agent_provider,
+    API_KEY_ENVS,
+)
 from math_agent.agents.thinking import ThinkingAgent
 from math_agent.agents.assistant import AssistantAgent
 from math_agent.agents.cli_agent import CLIAgent
@@ -32,6 +39,65 @@ from math_agent.problem.spec import ProblemSpec
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Client factory (same provider dispatch, but called per-agent)
+# ---------------------------------------------------------------------------
+
+def _create_client(
+    provider: str,
+    model: str,
+    temperature: float = 0.7,
+    api_key: str = "",
+) -> BaseLLMClient:
+    """Instantiate the LLM client for *provider*."""
+    if not api_key:
+        env_key = API_KEY_ENVS.get(provider, "")
+        api_key = os.environ.get(env_key, "")
+
+    if provider == "anthropic":
+        from math_agent.llm.anthropic_client import AnthropicClient
+        return AnthropicClient(model=model, api_key=api_key, temperature=temperature)
+    elif provider == "openai":
+        from math_agent.llm.openai_client import OpenAIClient
+        return OpenAIClient(model=model, api_key=api_key, temperature=temperature)
+    elif provider == "deepseek":
+        from math_agent.llm.deepseek_client import DeepSeekClient
+        return DeepSeekClient(model=model, api_key=api_key, temperature=temperature)
+    elif provider == "gemini":
+        from math_agent.llm.gemini_client import GeminiClient
+        return GeminiClient(model=model, api_key=api_key, temperature=temperature)
+    else:
+        raise ValueError(f"Unknown provider: {provider}")
+
+
+def _client_for_agent(
+    agent_cfg: AgentProvider,
+    shared: ProviderConfig,
+    fallback_client: BaseLLMClient | None = None,
+) -> BaseLLMClient:
+    """Return an LLM client for a specific agent.
+
+    If the agent has its own provider/model override, build a new client.
+    Otherwise reuse *fallback_client* (the shared default).
+    """
+    if agent_cfg.name:
+        # Agent has an explicit provider override -> create dedicated client
+        name, model, temp = resolve_agent_provider(agent_cfg, shared)
+        api_key = agent_cfg.api_key
+        return _create_client(name, model, temp, api_key)
+
+    if fallback_client is not None:
+        return fallback_client
+
+    # Build from shared config
+    name, model, temp = resolve_agent_provider(agent_cfg, shared)
+    return _create_client(name, model, temp)
+
+
+# ---------------------------------------------------------------------------
+# Result
+# ---------------------------------------------------------------------------
+
 @dataclass
 class RunResult:
     success: bool
@@ -39,22 +105,45 @@ class RunResult:
     phase2: Phase2Result | None = None
     run_dir: Path | None = None
     total_roadmaps: int = 0
+    skipped_lean: bool = False
     events: list[ThinkingEvent | Phase2Event] = field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# Coordinator
+# ---------------------------------------------------------------------------
+
 class Coordinator:
-    """Top-level orchestrator: Phase 1 -> Phase 2 with feedback."""
+    """Top-level orchestrator: Phase 1 -> Phase 2 with feedback.
+
+    Supports per-agent provider/model configuration:
+
+    * If ``config.agents.thinking`` has a non-empty ``name``, the Thinking
+      Agent gets its own LLM client with that provider+model.
+    * Otherwise it falls back to the shared ``config.provider``.
+    * Same for assistant, review, and cli agents.
+    """
 
     def __init__(
         self,
         config: AppConfig,
-        client: BaseLLMClient,
-        problem: ProblemSpec,
+        client: BaseLLMClient | None = None,
+        problem: ProblemSpec | None = None,
     ):
         self.config = config
-        self.client = client
+        self._default_client = client
         self.problem = problem
-        self._callbacks: list = []  # event callbacks for web UI
+        self._callbacks: list = []
+
+    # -- convenience for backwards compat (single-client mode) --
+    @classmethod
+    def from_single_client(
+        cls,
+        config: AppConfig,
+        client: BaseLLMClient,
+        problem: ProblemSpec,
+    ) -> Coordinator:
+        return cls(config, client, problem)
 
     def on_event(self, callback) -> None:
         """Register a callback for real-time events."""
@@ -67,8 +156,31 @@ class Coordinator:
             except Exception:
                 pass
 
+    # ------------------------------------------------------------------
+    # Build per-agent clients
+    # ------------------------------------------------------------------
+
+    def _build_clients(self) -> dict[str, BaseLLMClient]:
+        """Return a dict mapping agent role -> LLM client."""
+        shared = self.config.provider
+        agents = self.config.agents
+        default = self._default_client
+
+        return {
+            "thinking": _client_for_agent(agents.thinking, shared, default),
+            "assistant": _client_for_agent(agents.assistant, shared, default),
+            "review": _client_for_agent(agents.review, shared, default),
+            "cli": _client_for_agent(agents.cli, shared, default),
+        }
+
+    # ------------------------------------------------------------------
+    # Main run
+    # ------------------------------------------------------------------
+
     async def run(self) -> RunResult:
         """Run the full pipeline: Phase 1 -> Phase 2 with feedback loop."""
+        assert self.problem is not None, "Coordinator requires a problem."
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_dir = self.config.runs_dir / timestamp
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -76,10 +188,16 @@ class Coordinator:
         memo = Memo(run_dir / "MEMO.md")
         notes = Notes(run_dir / "NOTES.md")
 
-        thinking = ThinkingAgent(self.client)
-        assistant = AssistantAgent(self.client)
+        clients = self._build_clients()
 
-        max_phase1_retries = 3  # Phase 2 can send us back
+        thinking = ThinkingAgent(clients["thinking"])
+        assistant = AssistantAgent(clients["assistant"])
+
+        # Log which provider each agent is using
+        for role, c in clients.items():
+            logger.info("Agent %-10s -> %s / %s", role, type(c).__name__, c.model)
+
+        max_phase1_retries = 3
         all_events: list[ThinkingEvent | Phase2Event] = []
         total_roadmaps = 0
 
@@ -96,13 +214,10 @@ class Coordinator:
                 problem_question=self.problem.question,
             )
 
-            # Wire event callbacks
             original_emit = phase1._emit
-
             def emit_with_notify(event, _orig=original_emit):
                 _orig(event)
                 self._notify(event)
-
             phase1._emit = emit_with_notify
 
             result1 = await phase1.run()
@@ -116,6 +231,34 @@ class Coordinator:
                 )
                 continue
 
+            # --- Skip Lean? ---
+            if self.config.skip_lean:
+                logger.info("skip_lean=true -- stopping after Phase 1.")
+
+                summary = {
+                    "success": True,
+                    "phase": "phase1_only",
+                    "problem_id": self.problem.problem_id,
+                    "problem": self.problem.question,
+                    "cycles": cycle + 1,
+                    "total_roadmaps": total_roadmaps,
+                    "skip_lean": True,
+                    "timestamp": timestamp,
+                }
+                (run_dir / "summary.json").write_text(
+                    json.dumps(summary, indent=2)
+                )
+
+                return RunResult(
+                    success=True,
+                    phase1=result1,
+                    phase2=None,
+                    run_dir=run_dir,
+                    total_roadmaps=total_roadmaps,
+                    skipped_lean=True,
+                    events=all_events,
+                )
+
             # --- Phase 2 ---
             logger.info("=== Cycle %d: Phase 2 ===", cycle + 1)
 
@@ -125,7 +268,7 @@ class Coordinator:
                 use_mathlib=self.config.lean.mathlib,
             )
             compiler = LeanCompiler(lean_project.workspace)
-            cli_agent = CLIAgent(self.client)
+            cli_agent = CLIAgent(clients["cli"])
 
             phase2 = Phase2Runner(
                 cli_agent=cli_agent,
@@ -135,20 +278,16 @@ class Coordinator:
                 proof=result1.complete_proof,
             )
 
-            # Wire events
             original_emit2 = phase2._emit
-
             def emit2_with_notify(event, _orig=original_emit2):
                 _orig(event)
                 self._notify(event)
-
             phase2._emit = emit2_with_notify
 
             result2 = await phase2.run()
             all_events.extend(result2.events)
 
             if result2.success:
-                # Write summary
                 summary = {
                     "success": True,
                     "problem_id": self.problem.problem_id,
@@ -173,7 +312,6 @@ class Coordinator:
                 )
 
             if result2.structural_issue:
-                # Feed structural issue back to Phase 1 via MEMO
                 logger.warning(
                     "Phase 2 structural issue: %s",
                     result2.structural_issue,
@@ -189,16 +327,14 @@ class Coordinator:
                     achieved,
                     f"Lean formalization failed: {result2.structural_issue}",
                 )
-                # Loop back to Phase 1
                 continue
 
-            # Phase 2 failed without structural issue (just couldn't formalize)
             logger.warning(
                 "Phase 2 failed: %d modules incomplete",
                 len(result2.modules_failed),
             )
 
-        # Write failure summary
+        # All cycles exhausted
         summary = {
             "success": False,
             "problem_id": self.problem.problem_id,

@@ -110,11 +110,53 @@ During Phase 2, each Lean module has its own MEMO tracking:
 |-----------|---------|
 | **N** | Number of steps per roadmap |
 | **C** | Context compression interval: after C execution loops, trigger progressive compression |
+| **skip_lean** | If `true`, stop after Phase 1 (no Lean formalization). Useful for quick testing. |
 
 Note: there is no fixed **M** (max rounds per roadmap). Instead, the system uses
 **diminishing-returns detection**: if the Thinking Agent makes no progress over
 the last K iterations (no new steps PROVED, no new insights in MEMO), the roadmap
 is abandoned. This is adaptive rather than a fixed budget.
+
+### Per-agent provider configuration
+
+Each agent can use a different LLM provider and model. This lets you
+pair the right model with the right task:
+
+| Agent | Recommended model type | Example |
+|-------|----------------------|---------|
+| **Thinking Agent** | Strongest reasoning model | `openai/o3`, `anthropic/claude-opus-4-0626` |
+| **Assistant Agent** | Fast + cheap (just summarization) | `gemini/gemini-2.5-flash`, `anthropic/claude-haiku` |
+| **Review Agent** | Moderate strength | `anthropic/claude-sonnet-4.6` |
+| **CLI Agent** | Good at code | `anthropic/claude-sonnet-4.6`, `openai/o3` |
+
+Configuration in TOML:
+
+```toml
+# Shared default (fallback for any agent without its own section)
+[provider]
+name = "anthropic"
+model = "claude-opus-4-0626"
+
+# Per-agent overrides (leave out to inherit [provider])
+[agents.thinking]
+name = "openai"
+model = "o3"
+
+[agents.assistant]
+name = "gemini"
+model = "gemini-2.5-flash"
+
+[agents.review]
+name = "anthropic"
+model = "claude-sonnet-4-0626"
+
+[agents.cli]
+name = "anthropic"
+model = "claude-sonnet-4-0626"
+```
+
+Or use a single provider for all agents by only setting `[provider]`
+and omitting the `[agents.*]` sections.
 
 ---
 

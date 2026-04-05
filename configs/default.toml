@@ -1,0 +1,13 @@
+[hyperparameters]
+N = 5                   # steps per roadmap
+C = 8                   # context compression interval
+K = 3                   # diminishing-returns window (no progress in K iters -> abandon)
+
+[provider]
+name = "anthropic"      # openai | anthropic | deepseek | gemini
+model = ""              # empty = provider default
+temperature = 0.7
+
+[lean]
+toolchain = "leanprover/lean4:v4.14.0"
+mathlib = true

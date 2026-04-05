@@ -634,62 +634,62 @@ with `lake build`.
 
 ### Phase A: Project skeleton
 - [x] Create project directory and AGENT.md
-- [ ] Initialize git repository
-- [ ] Write pyproject.toml with dependencies
-- [ ] Write .gitignore
-- [ ] Create configs/default.toml
+- [x] Initialize git repository
+- [x] Write pyproject.toml with dependencies
+- [x] Write .gitignore
+- [x] Create configs/default.toml
 
 ### Phase B: Core data layer
-- [ ] `src/math_agent/__init__.py`
-- [ ] `src/math_agent/config.py` -- configuration loading
-- [ ] `src/math_agent/problem/spec.py` -- ProblemSpec + all built-in problems
-- [ ] `src/math_agent/documents/memo.py` -- MEMO read/write with structured format
-- [ ] `src/math_agent/documents/notes.py` -- NOTES read/write
-- [ ] `src/math_agent/documents/module_memo.py` -- per-Lean-module MEMO
+- [x] `src/math_agent/__init__.py`
+- [x] `src/math_agent/config.py` -- configuration loading
+- [x] `src/math_agent/problem/spec.py` -- ProblemSpec + 37 built-in problems + 7 suites
+- [x] `src/math_agent/documents/memo.py` -- MEMO read/write with structured format
+- [x] `src/math_agent/documents/notes.py` -- NOTES read/write
+- [x] `src/math_agent/documents/module_memo.py` -- per-Lean-module MEMO
 
 ### Phase C: LLM provider layer
-- [ ] `src/math_agent/llm/base.py` -- base client interface
-- [ ] `src/math_agent/llm/openai_client.py`
-- [ ] `src/math_agent/llm/anthropic_client.py`
-- [ ] `src/math_agent/llm/deepseek_client.py`
-- [ ] `src/math_agent/llm/gemini_client.py`
+- [x] `src/math_agent/llm/base.py` -- base client interface
+- [x] `src/math_agent/llm/openai_client.py` -- OpenAI Responses API, default o3
+- [x] `src/math_agent/llm/anthropic_client.py` -- Anthropic Messages API, default claude-opus-4-0626
+- [x] `src/math_agent/llm/deepseek_client.py` -- DeepSeek via OpenAI SDK, default deepseek-reasoner
+- [x] `src/math_agent/llm/gemini_client.py` -- Google genai SDK, default gemini-2.5-pro
 
 ### Phase D: Agent layer
-- [ ] `src/math_agent/agents/base.py` -- BaseAgent interface
-- [ ] `src/math_agent/agents/thinking.py` -- Thinking Agent
-- [ ] `src/math_agent/agents/assistant.py` -- Assistant Agent
-- [ ] `src/math_agent/agents/review.py` -- Review Agent
-- [ ] `src/math_agent/agents/cli_agent.py` -- CLI Agent (Lean writer)
+- [x] `src/math_agent/agents/base.py` -- BaseAgent with StepResult, RoadmapEvaluation, ReviewResult
+- [x] `src/math_agent/agents/thinking.py` -- roadmap generation, step work + self-verify, roadmap re-eval
+- [x] `src/math_agent/agents/assistant.py` -- cursor-based MEMO/NOTES updates, proposition extraction
+- [x] `src/math_agent/agents/review.py` -- forked independent review with gap detection
+- [x] `src/math_agent/agents/cli_agent.py` -- Lean skeleton, sorry-elimination, external claims
 
 ### Phase E: Context management
-- [ ] `src/math_agent/context/token_budget.py` -- token counting
-- [ ] `src/math_agent/context/compression.py` -- 4-layer compression
-- [ ] `src/math_agent/context/diminishing.py` -- progress detection
+- [x] `src/math_agent/context/token_budget.py` -- pressure detection (low/moderate/high/critical)
+- [x] `src/math_agent/context/compression.py` -- 4-layer progressive compression
+- [x] `src/math_agent/context/diminishing.py` -- progress tracking + abandon signal
 
 ### Phase F: Orchestrator
-- [ ] `src/math_agent/orchestrator/phase1.py` -- Phase 1 loop
-- [ ] `src/math_agent/orchestrator/phase2.py` -- Phase 2 loop
-- [ ] `src/math_agent/orchestrator/coordinator.py` -- top-level coordinator
+- [x] `src/math_agent/orchestrator/phase1.py` -- Phase 1: roadmap -> execute -> verify -> review
+- [x] `src/math_agent/orchestrator/phase2.py` -- Phase 2: skeleton -> compile -> sorry-eliminate
+- [x] `src/math_agent/orchestrator/coordinator.py` -- Phase 1 -> Phase 2 with feedback loop
 
 ### Phase G: Lean integration
-- [ ] `src/math_agent/lean/compiler.py` -- Lean compiler wrapper
-- [ ] `src/math_agent/lean/project.py` -- Lean project scaffolding
-- [ ] `src/math_agent/lean/module_splitter.py` -- proof to module decomposition
-- [ ] `src/math_agent/lean/external_claims.py` -- axiom management
+- [x] `src/math_agent/lean/compiler.py` -- lake env lean wrapper + error parsing
+- [x] `src/math_agent/lean/project.py` -- lakefile + toolchain scaffolding
+- [x] `src/math_agent/lean/module_splitter.py` -- proof decomposition into modules
+- [x] `src/math_agent/lean/external_claims.py` -- axiom registry + Lean codegen
 
 ### Phase H: Entry points and Web UI
-- [ ] `src/math_agent/main.py` -- CLI entry point
-- [ ] `src/math_agent/webapp.py` -- FastAPI web server
-- [ ] `src/math_agent/web/index.html` -- two-panel interface
-- [ ] `src/math_agent/web/style.css` -- styling
-- [ ] `src/math_agent/web/app.js` -- WebSocket client
+- [x] `src/math_agent/main.py` -- CLI wizard + argparse entry point
+- [x] `src/math_agent/webapp.py` -- FastAPI + WebSocket streaming
+- [x] `src/math_agent/web/index.html` -- two-panel interface (Dialogue + Thinking Process)
+- [x] `src/math_agent/web/style.css` -- dark theme, status-coded roadmap steps
+- [x] `src/math_agent/web/app.js` -- WebSocket client with live updates
 
 ### Phase I: Tests
-- [ ] `tests/conftest.py` -- shared fixtures
-- [ ] `tests/test_documents/test_memo.py`
+- [x] `tests/conftest.py` -- MockLLMClient + fixtures
+- [x] `tests/test_documents/test_memo.py` -- 4 tests
 - [ ] `tests/test_documents/test_notes.py`
-- [ ] `tests/test_context/test_compression.py`
-- [ ] `tests/test_context/test_diminishing.py`
-- [ ] `tests/test_agents/test_thinking.py`
+- [x] `tests/test_context/test_compression.py` -- 2 async tests
+- [x] `tests/test_context/test_diminishing.py` -- 4 tests
+- [x] `tests/test_agents/test_thinking.py` -- 2 async tests
 - [ ] `tests/test_orchestrator/test_phase1.py`
-- [ ] `tests/test_lean/test_compiler.py`
+- [x] `tests/test_lean/test_compiler.py` -- 2 tests

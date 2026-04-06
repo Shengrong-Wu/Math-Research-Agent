@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Math Agent</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Header                                                              -->
+  <!-- ------------------------------------------------------------------ -->
+  <header id="header">
+    <div class="header-left">
+      <h1>Math Agent</h1>
+      <span class="subtitle">Proof search with Lean 4 verification</span>
+    </div>
+    <div class="header-right">
+      <span id="status-indicator" class="status-dot disconnected" title="WebSocket disconnected"></span>
+    </div>
+  </header>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Main three-panel layout                                             -->
+  <!-- ------------------------------------------------------------------ -->
+  <main id="main">
+    <!-- ============================================================== -->
+    <!-- Left: Run Setup sidebar                                        -->
+    <!-- ============================================================== -->
+    <aside id="setup-panel">
+      <div class="panel-header">Run Setup</div>
+      <div class="panel-body" id="setup-body">
+
+        <!-- Provider Mode -->
+        <div class="form-section">
+          <div class="form-group">
+            <label for="provider-mode">PROVIDER MODE</label>
+            <select id="provider-mode">
+              <option value="single">Single provider for all agents</option>
+              <option value="multi">Different provider per agent</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- ====== Single Provider Config ====== -->
+        <div id="single-config" class="form-section">
+          <div class="form-group">
+            <label for="provider-select">PROVIDER</label>
+            <select id="provider-select">
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="gemini">Google Gemini</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="model-select">MODEL</label>
+            <select id="model-select">
+              <option value="">Loading...</option>
+            </select>
+            <input type="text" id="model-custom" class="hidden" placeholder="Enter custom model name" />
+          </div>
+
+          <div class="form-group">
+            <label for="api-key-input">API KEY</label>
+            <div class="input-with-hint">
+              <input type="password" id="api-key-input" placeholder="From env or enter here" />
+              <span id="api-key-hint" class="hint"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ====== Multi-Agent Provider Config ====== -->
+        <div id="multi-config" class="form-section hidden">
+
+          <!-- Thinking Agent -->
+          <div class="agent-section">
+            <div class="agent-label">THINKING AGENT</div>
+            <div class="agent-desc">Proof reasoning -- needs strongest model</div>
+            <div class="form-group">
+              <label>Provider</label>
+              <select id="thinking-provider" class="agent-provider-select">
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="gemini">Gemini</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Model</label>
+              <select id="thinking-model" class="agent-model-select">
+                <option value="">Loading...</option>
+              </select>
+              <input type="text" id="thinking-model-custom" class="hidden" placeholder="Custom model" />
+            </div>
+            <div class="form-group">
+              <label>API Key</label>
+              <div class="input-with-hint">
+                <input type="password" id="thinking-api-key" class="agent-api-key" placeholder="From env or enter" />
+                <span id="thinking-api-key-hint" class="hint"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Assistant Agent -->
+          <div class="agent-section">
+            <div class="agent-label">ASSISTANT AGENT</div>
+            <div class="agent-desc">MEMO/NOTES compression -- can be fast+cheap</div>
+            <div class="form-group">
+              <label>Provider</label>
+              <select id="assistant-provider" class="agent-provider-select">
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="gemini">Gemini</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Model</label>
+              <select id="assistant-model" class="agent-model-select">
+                <option value="">Loading...</option>
+              </select>
+              <input type="text" id="assistant-model-custom" class="hidden" placeholder="Custom model" />
+            </div>
+            <div class="form-group">
+              <label>API Key</label>
+              <div class="input-with-hint">
+                <input type="password" id="assistant-api-key" class="agent-api-key" placeholder="From env or enter" />
+                <span id="assistant-api-key-hint" class="hint"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Review Agent -->
+          <div class="agent-section">
+            <div class="agent-label">REVIEW AGENT</div>
+            <div class="agent-desc">Independent proof review -- moderate strength</div>
+            <div class="form-group">
+              <label>Provider</label>
+              <select id="review-provider" class="agent-provider-select">
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="gemini">Gemini</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Model</label>
+              <select id="review-model" class="agent-model-select">
+                <option value="">Loading...</option>
+              </select>
+              <input type="text" id="review-model-custom" class="hidden" placeholder="Custom model" />
+            </div>
+            <div class="form-group">
+              <label>API Key</label>
+              <div class="input-with-hint">
+                <input type="password" id="review-api-key" class="agent-api-key" placeholder="From env or enter" />
+                <span id="review-api-key-hint" class="hint"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CLI Agent -->
+          <div class="agent-section">
+            <div class="agent-label">CLI AGENT</div>
+            <div class="agent-desc">Lean 4 code -- needs good code model</div>
+            <div class="form-group">
+              <label>Provider</label>
+              <select id="cli-provider" class="agent-provider-select">
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="gemini">Gemini</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Model</label>
+              <select id="cli-model" class="agent-model-select">
+                <option value="">Loading...</option>
+              </select>
+              <input type="text" id="cli-model-custom" class="hidden" placeholder="Custom model" />
+            </div>
+            <div class="form-group">
+              <label>API Key</label>
+              <div class="input-with-hint">
+                <input type="password" id="cli-api-key" class="agent-api-key" placeholder="From env or enter" />
+                <span id="cli-api-key-hint" class="hint"></span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <hr class="divider" />
+
+        <!-- Problem Selection -->
+        <div class="form-section">
+          <div class="form-group">
+            <label for="problem-source">PROBLEM SOURCE</label>
+            <select id="problem-source">
+              <option value="builtin">Built-in problem</option>
+              <option value="custom">Custom problem</option>
+              <option value="resume">Resume from previous run</option>
+            </select>
+          </div>
+
+          <div id="builtin-problem-group" class="form-group">
+            <label for="problem-select">BUILT-IN PROBLEM</label>
+            <select id="problem-select">
+              <option value="">Loading...</option>
+            </select>
+          </div>
+
+          <div id="custom-problem-group" class="hidden">
+            <div class="form-group">
+              <label for="custom-question">YOUR PROBLEM</label>
+              <textarea id="custom-question" rows="4" placeholder="Enter your math problem..."></textarea>
+            </div>
+            <div class="form-group">
+              <label for="custom-domain">DOMAIN</label>
+              <input type="text" id="custom-domain" value="general" />
+            </div>
+          </div>
+
+          <!-- Resume from previous run -->
+          <div id="resume-group" class="hidden">
+            <div class="form-group">
+              <label for="resume-select">PREVIOUS RUN</label>
+              <select id="resume-select">
+                <option value="">Loading runs...</option>
+              </select>
+            </div>
+            <div id="resume-info" class="resume-info-box hidden">
+              <div id="resume-problem-text" class="resume-problem"></div>
+              <div class="resume-meta">
+                <span id="resume-status" class="badge"></span>
+                <span id="resume-roadmaps" class="badge"></span>
+              </div>
+            </div>
+            <div id="resume-problem-override" class="form-group hidden">
+              <label for="resume-problem-select">PROBLEM (required for crashed runs)</label>
+              <select id="resume-problem-select">
+                <option value="">Loading...</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <hr class="divider" />
+
+        <!-- Options -->
+        <div class="form-section">
+          <label class="checkbox-label">
+            <input type="checkbox" id="skip-lean-check" checked />
+            <span>Skip Phase 2 (Lean formalization)</span>
+          </label>
+        </div>
+
+        <!-- Hyperparameters -->
+        <div class="form-section">
+          <div class="section-label">HYPERPARAMETERS</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="hyper-n">N (steps)</label>
+              <input type="number" id="hyper-n" value="7" min="1" max="20" />
+            </div>
+            <div class="form-group">
+              <label for="hyper-c">C (compress)</label>
+              <input type="number" id="hyper-c" value="8" min="1" max="50" />
+            </div>
+            <div class="form-group">
+              <label for="hyper-k">K (window)</label>
+              <input type="number" id="hyper-k" value="3" min="1" max="20" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Run Button -->
+        <button id="run-btn" class="btn-run">Run</button>
+
+      </div>
+    </aside>
+
+    <!-- ============================================================== -->
+    <!-- Center: Dialogue / MEMO state                                  -->
+    <!-- ============================================================== -->
+    <section id="panel-dialogue" class="panel">
+      <div class="panel-header">Dialogue</div>
+      <div class="panel-body" id="dialogue-body">
+        <!-- Problem info -->
+        <div id="problem-info" class="section hidden">
+          <h3>Problem</h3>
+          <p id="problem-question"></p>
+          <div class="problem-meta">
+            <span id="problem-domain" class="badge"></span>
+            <span id="problem-difficulty" class="badge"></span>
+          </div>
+        </div>
+
+        <!-- Current roadmap -->
+        <div id="roadmap-section" class="section hidden">
+          <h3>Current Roadmap</h3>
+          <ol id="roadmap-steps"></ol>
+        </div>
+
+        <!-- Proved propositions -->
+        <div id="propositions-section" class="section hidden">
+          <h3>Proved Propositions</h3>
+          <ul id="propositions-list"></ul>
+        </div>
+
+        <!-- Complete proof (shown after review) -->
+        <div id="proof-section" class="section hidden">
+          <h3>Complete Proof</h3>
+          <div id="proof-content" class="proof-block"></div>
+        </div>
+
+        <!-- Previous roadmaps -->
+        <div id="prev-roadmaps-section" class="section hidden">
+          <h3>Previous Roadmaps</h3>
+          <div id="prev-roadmaps-list"></div>
+        </div>
+
+        <!-- Placeholder when idle -->
+        <div id="idle-message">
+          <p>Configure the run setup and click <strong>Run</strong> to start.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================== -->
+    <!-- Right: Thinking Process stream                                 -->
+    <!-- ============================================================== -->
+    <section id="panel-thinking" class="panel">
+      <div class="panel-header">
+        Thinking Process
+        <button id="clear-log-btn" class="btn-small" title="Clear log">Clear</button>
+      </div>
+      <div class="panel-body" id="thinking-body">
+        <div id="thinking-log"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Reconnection overlay                                                -->
+  <!-- ------------------------------------------------------------------ -->
+  <div id="reconnect-overlay" class="hidden">
+    <div class="reconnect-box">
+      <p>Connection lost. Reconnecting...</p>
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

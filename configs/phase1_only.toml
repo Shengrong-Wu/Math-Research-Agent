@@ -1,0 +1,23 @@
+# Example: Phase 1 only (skip Lean formalization).
+#
+# Use this for quick testing of the mathematical proof pipeline
+# without waiting for Lean compilation.
+#
+# Usage:
+#   math-agent --config configs/phase1_only.toml --problem pid_prime_implies_maximal
+
+[hyperparameters]
+N = 5
+C = 8
+K = 3
+
+skip_lean = true
+
+[provider]
+name = "anthropic"
+model = "claude-opus-4-0626"
+temperature = 0.7
+
+[lean]
+toolchain = "leanprover/lean4:v4.14.0"
+mathlib = true

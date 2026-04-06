@@ -168,12 +168,15 @@ Or use the Web UI: select "Resume from previous run" in the problem source dropd
 |---------|-------|-------|--------|
 | Uniform Boundedness Principle | L4 | Claude Opus | Single-roadmap solve |
 | Krull Intersection Theorem | L3 | Gemini Flash | Solve + successful resume |
-| IMO 2024 Shortlist N1 | L4+ | DeepSeek Chat | Correct answer |
-| RMM 2026 P2 | L5 | Gemini 3.1 pro preview | Complete gap-free proof |
+| IMO 2024 Shortlist N1 | L4+ | DeepSeek Chat | Correct answer every attempt |
+| RMM 2026 P2 (factorial divisibility) | L5 | Gemini 3.1 Pro | Complete gap-free proof |
+| RMM 2026 P6 (permutation floor inequality) | L6 | Gemini 3.1 Pro | Complete proof, 2 roadmaps |
 
-**IMO 2024 N1:** DeepSeek-chat (a non-reasoning model) with the MEMO architecture correctly solved the problem. DeepSeek Reasoning (R1) in AlphaEvolve and Gemini fast chatbot could not solve it standalone.
+**IMO 2024 N1:** DeepSeek-chat (a non-reasoning model) with the MEMO architecture correctly solved the problem in every attempt. DeepSeek Reasoning (R1) in AlphaEvolve and Gemini chatbot could not solve it standalone.
 
-**RMM 2026 P2**: The same problem was tested with the Math Agent and with Gemini 3.1 Pro Preview in the Gemini web interface (single-shot, no architecture). The agent produced a complete, gap-free 6-step proof via involution analysis. Gemini Pro found the correct answer and produced genuine mathematical insight (a sum-of-squares constraint), but left 4 significant gaps — an unproved superfactorial identity, an unjustified quadratic residue claim, missing roots in a quartic analysis, and a hand-waved mod-8 conclusion. The architecture's multi-step verification closed every gap that the standalone model could not.
+**RMM 2026 P2** (L5): The agent produced a complete, gap-free 6-step proof via involution analysis. Gemini 3.1 Pro in the web interface (single-shot, no architecture) found the correct answer but left 4 significant gaps. The architecture's multi-step verification closed every gap the standalone model could not.
+
+**RMM 2026 P6** (L6 — competition extreme): A 9-step proof via Erdős–Szekeres poset analysis, Dilworth partition, grid bijection with (−d,l)-lex ordering, and Gale's theorem for bucket feasibility. The first roadmap was rejected by the blind falsifier (found a concrete counterexample k=3, X=(2,5,7,8) where the constructed permutation admitted an extra monotone subsequence). The second roadmap fixed the construction with refined placement constraints and proved uniqueness by downward induction. GPT Pro web failed this problem; Gemini 3.1 Pro in the web interface could not produce any meaningful progress. The MEMO architecture with the same Gemini 3.1 Pro API produced a complete, rigorous proof. The proof was verified by Opus 4.6 and GPT 5.4 xhigh.
 
 ## Project Structure
 

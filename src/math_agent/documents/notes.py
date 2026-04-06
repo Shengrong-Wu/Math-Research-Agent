@@ -36,6 +36,29 @@ class Notes:
         with self.path.open("a", encoding="utf-8") as f:
             f.write(entry)
 
+    def get_step_proof(self, step_index: int) -> str | None:
+        """Find proof text for a specific step by its index.
+
+        Searches the notes for a section headed "## Step {step_index}: ..."
+        and returns its content.
+
+        Returns None if the step is not found in the notes.
+        """
+        if not self.path.exists():
+            return None
+
+        text = self.path.read_text(encoding="utf-8")
+
+        pattern = re.compile(
+            rf"^## Step {step_index}:.*?\n(.*?)(?=^## Step \d+:|\Z)",
+            re.MULTILINE | re.DOTALL,
+        )
+        match = pattern.search(text)
+        if match:
+            return match.group(0).strip()
+
+        return None
+
     def get_proposition_proof(self, prop_id: str) -> str | None:
         """Find proof text for a specific proposition by its ID.
 

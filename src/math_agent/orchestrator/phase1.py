@@ -124,108 +124,254 @@ class Phase1Runner:
             # Clear the handoff after consuming it
             self.memo.clear_handoff()
 
+        # --- Resume from in-progress roadmap ---
+        # If the MEMO has a current roadmap with some PROVED and some
+        # UNPROVED steps, verify the proved steps and resume from where
+        # the previous run left off.
+        resumed_from_progress = False
+        if memo_state.current_roadmap:
+            proved_steps = [s for s in memo_state.current_roadmap if s.status == "PROVED"]
+            unproved_steps = [s for s in memo_state.current_roadmap if s.status in ("UNPROVED", "IN_PROGRESS")]
+            if proved_steps and unproved_steps:
+                logger.info(
+                    "Found in-progress roadmap: %d proved, %d remaining. Verifying proved steps...",
+                    len(proved_steps), len(unproved_steps),
+                )
+                self._emit(
+                    ThinkingEvent(
+                        "resume_verify",
+                        content=(
+                            f"Resuming from previous run: {len(proved_steps)} proved, "
+                            f"{len(unproved_steps)} remaining. Verifying proved steps..."
+                        ),
+                        metadata={
+                            "current_roadmap": [
+                                {"step_index": s.step_index, "description": s.description, "status": s.status}
+                                for s in memo_state.current_roadmap
+                            ],
+                        },
+                    )
+                )
+
+                # Verify each proved step using its proof from NOTES
+                all_valid = True
+                first_invalid_index = None
+                for step in proved_steps:
+                    proof_text = self.notes.get_step_proof(step.step_index)
+                    if not proof_text:
+                        logger.warning(
+                            "No proof found in NOTES for step %d, marking invalid.",
+                            step.step_index,
+                        )
+                        all_valid = False
+                        first_invalid_index = step.step_index
+                        self._emit(
+                            ThinkingEvent(
+                                "resume_verify_failed",
+                                step_index=step.step_index,
+                                content=f"Step {step.step_index}: no proof record found. Will re-prove.",
+                            )
+                        )
+                        break
+
+                    verified = await self.thinking.verify_proved_step(
+                        self.problem,
+                        step.description,
+                        step.step_index,
+                        proof_text,
+                    )
+
+                    if verified:
+                        self._emit(
+                            ThinkingEvent(
+                                "resume_verify_passed",
+                                step_index=step.step_index,
+                                content=f"Step {step.step_index}: verified correct. Skipping.",
+                            )
+                        )
+                        logger.info("Step %d verified correct.", step.step_index)
+                    else:
+                        all_valid = False
+                        first_invalid_index = step.step_index
+                        self._emit(
+                            ThinkingEvent(
+                                "resume_verify_failed",
+                                step_index=step.step_index,
+                                content=f"Step {step.step_index}: verification failed. Will re-prove from here.",
+                            )
+                        )
+                        logger.warning("Step %d failed verification.", step.step_index)
+                        break
+
+                if all_valid:
+                    # All proved steps verified — resume from first unproved
+                    self._emit(
+                        ThinkingEvent(
+                            "resume_ready",
+                            content=(
+                                f"All {len(proved_steps)} proved steps verified. "
+                                f"Resuming from step {unproved_steps[0].step_index}."
+                            ),
+                        )
+                    )
+                    resumed_from_progress = True
+                else:
+                    # Invalidate the failed step and all after it
+                    for step in memo_state.current_roadmap:
+                        if step.step_index >= first_invalid_index:
+                            step.status = "UNPROVED"
+                            step.result = None
+                    self.memo.set_current_roadmap(memo_state.current_roadmap)
+                    self._emit(
+                        ThinkingEvent(
+                            "resume_ready",
+                            content=(
+                                f"Step {first_invalid_index} failed verification. "
+                                f"Resuming from step {first_invalid_index}."
+                            ),
+                        )
+                    )
+                    resumed_from_progress = True
+
         while self._roadmaps_attempted < max_roadmap_attempts:
             self._roadmaps_attempted += 1
             self.detector.reset()
 
-            # --- Roadmap Generation ---
-            memo_state = self.memo.load()
-            memo_content = None
-            if memo_state.previous_roadmaps or memo_state.proved_propositions:
-                memo_content = (
-                    self.memo.path.read_text() if self.memo.path.exists() else None
+            # --- Resume: use the in-progress roadmap on first iteration ---
+            if resumed_from_progress:
+                resumed_from_progress = False  # only on first iteration
+                memo_state = self.memo.load()
+                steps = memo_state.current_roadmap
+                # Reconstruct approach from step descriptions
+                chosen = {
+                    "approach": "Resumed from previous run",
+                    "steps": [s.description for s in steps],
+                }
+                self._emit(
+                    ThinkingEvent(
+                        "roadmap_generated",
+                        content="Resumed roadmap from previous run.",
+                        metadata={
+                            "steps": [s.description for s in steps],
+                            "count_considered": 0,
+                            "runner_up_used": False,
+                            "resumed": True,
+                            "current_roadmap": [
+                                {"step_index": s.step_index, "description": s.description, "status": s.status}
+                                for s in steps
+                            ],
+                        },
+                    )
                 )
-
-            is_first = self._roadmaps_attempted == 1 and memo_content is None
-
-            # --- P4: Try runner-up roadmap before generating fresh ---
-            chosen = None
-            runner_up_used = False
-
-            if not is_first and memo_state.runner_up_roadmaps:
-                # Try the best runner-up instead of generating fresh
-                runner_up = self.memo.pop_runner_up()
-                if runner_up:
-                    chosen = {
-                        "approach": runner_up.approach,
-                        "steps": runner_up.steps,
-                        "reasoning": runner_up.reasoning,
-                    }
-                    runner_up_used = True
-                    logger.info(
-                        "Using runner-up roadmap: %s",
-                        runner_up.approach[:80],
+            else:
+                # --- Normal Roadmap Generation ---
+                memo_state = self.memo.load()
+                memo_content = None
+                if memo_state.previous_roadmaps or memo_state.proved_propositions:
+                    memo_content = (
+                        self.memo.path.read_text() if self.memo.path.exists() else None
                     )
 
-            if chosen is None:
-                # Generate fresh roadmaps
-                count = 3 if is_first else 1
-                roadmaps = await self.thinking.generate_roadmaps(
-                    self.problem,
-                    memo_content,
-                    count=count,
-                )
+                is_first = self._roadmaps_attempted == 1 and memo_content is None
 
-                if not roadmaps:
-                    self._emit(
-                        ThinkingEvent(
-                            "abandoned", content="Failed to generate any roadmap."
+                # --- P4: Try runner-up roadmap before generating fresh ---
+                chosen = None
+                runner_up_used = False
+
+                if not is_first and memo_state.runner_up_roadmaps:
+                    # Try the best runner-up instead of generating fresh
+                    runner_up = self.memo.pop_runner_up()
+                    if runner_up:
+                        chosen = {
+                            "approach": runner_up.approach,
+                            "steps": runner_up.steps,
+                            "reasoning": runner_up.reasoning,
+                        }
+                        runner_up_used = True
+                        logger.info(
+                            "Using runner-up roadmap: %s",
+                            runner_up.approach[:80],
                         )
+
+                if chosen is None:
+                    # Generate fresh roadmaps
+                    count = 3 if is_first else 1
+                    roadmaps = await self.thinking.generate_roadmaps(
+                        self.problem,
+                        memo_content,
+                        count=count,
+                    )
+
+                    if not roadmaps:
+                        self._emit(
+                            ThinkingEvent(
+                                "abandoned", content="Failed to generate any roadmap."
+                            )
+                        )
+                        continue
+
+                    chosen = roadmaps[0]
+
+                    # P4: Store runner-ups on first attempt (when 3 were generated)
+                    if is_first and len(roadmaps) > 1:
+                        self.memo.store_runner_ups(roadmaps[1:])
+                        logger.info(
+                            "Stored %d runner-up roadmap(s) for fallback.",
+                            len(roadmaps) - 1,
+                        )
+
+                steps = [
+                    RoadmapStep(
+                        step_index=i + 1, description=desc, status="UNPROVED"
+                    )
+                    for i, desc in enumerate(
+                        chosen.get("steps", [])[: self.hyper.N]
+                    )
+                ]
+
+                if not steps:
+                    self._emit(
+                        ThinkingEvent("abandoned", content="Roadmap had no steps.")
                     )
                     continue
 
-                chosen = roadmaps[0]
+                self.memo.set_current_roadmap(steps)
 
-                # P4: Store runner-ups on first attempt (when 3 were generated)
-                if is_first and len(roadmaps) > 1:
-                    self.memo.store_runner_ups(roadmaps[1:])
-                    logger.info(
-                        "Stored %d runner-up roadmap(s) for fallback.",
-                        len(roadmaps) - 1,
-                    )
-
-            steps = [
-                RoadmapStep(
-                    step_index=i + 1, description=desc, status="UNPROVED"
-                )
-                for i, desc in enumerate(
-                    chosen.get("steps", [])[: self.hyper.N]
-                )
-            ]
-
-            if not steps:
                 self._emit(
-                    ThinkingEvent("abandoned", content="Roadmap had no steps.")
+                    ThinkingEvent(
+                        "roadmap_generated",
+                        content=chosen.get("approach", ""),
+                        metadata={
+                            "steps": [s.description for s in steps],
+                            "count_considered": 1 if runner_up_used else (3 if is_first else 1),
+                            "runner_up_used": runner_up_used,
+                            "current_roadmap": [
+                                {"step_index": s.step_index, "description": s.description, "status": s.status}
+                                for s in steps
+                            ],
+                        },
+                    )
                 )
-                continue
-
-            self.memo.set_current_roadmap(steps)
-
-            self._emit(
-                ThinkingEvent(
-                    "roadmap_generated",
-                    content=chosen.get("approach", ""),
-                    metadata={
-                        "steps": [s.description for s in steps],
-                        "count_considered": 1 if runner_up_used else (3 if is_first else 1),
-                        "runner_up_used": runner_up_used,
-                        "current_roadmap": [
-                            {"step_index": s.step_index, "description": s.description, "status": s.status}
-                            for s in steps
-                        ],
-                    },
-                )
-            )
 
             # --- Execution Loop ---
+            has_proved = any(s.status == "PROVED" for s in steps)
             roadmap_summary = chosen.get("approach", "") + "\n" + "\n".join(
-                f"Step {s.step_index}: {s.description}" for s in steps
+                f"Step {s.step_index}: {s.description}"
+                + (f" [{s.status}]" if has_proved else "")
+                for s in steps
             )
             iteration = 0
 
             diagnosed_failures: list[StepFailure] = []
 
             for step in steps:
+                # Skip already-PROVED steps (from resume verification)
+                if step.status == "PROVED":
+                    logger.info(
+                        "Skipping step %d (already proved).", step.step_index
+                    )
+                    continue
+
                 proved = False
                 redo_count = 0
                 max_redos = 3

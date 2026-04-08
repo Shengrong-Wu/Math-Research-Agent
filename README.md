@@ -4,6 +4,8 @@ An autonomous agent that proves mathematical theorems through structured depth-f
 
 Given a math problem, the agent generates proof strategies, works through each step with self-verification, diagnoses failures, and iterates — accumulating knowledge across attempts via a persistent memory system (MEMO).
 
+To see a visualized architecture, see [blog.](https://shengrong-wu.github.io/posts/math_agent_and_RMM_P6/)
+
 ## Features
 
 - **Depth-first proof search** — commit to one strategy, learn from failures, then pivot with knowledge

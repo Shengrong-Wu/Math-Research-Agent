@@ -1,46 +1,48 @@
-# Example: different provider+model for each agent.
-#
-# Use a strong reasoning model for the Thinking Agent,
-# a fast+cheap model for the Assistant (just summarization),
-# a moderate model for the Review Agent,
-# and a good code model for the CLI Agent (Lean 4).
+# Example: different backend+model for each agent.
 #
 # Usage:
 #   math-agent --config configs/multi_provider.toml --problem harmonic_sum_not_integer
 
 [hyperparameters]
-N = 5
+n_min = 5
+n_max = 15
 C = 8
 K = 3
+lean_mode = "check"
 
-skip_lean = false
-
-# Shared default (used only as fallback if an agent section is missing)
-[provider]
-name = "anthropic"
-model = "claude-opus-4-0626"
-temperature = 0.7
+[runtime]
+backend = "codex"
+model = "gpt-5.4"
+effort = "low"
+sandbox = "workspace-write"
+approval_policy = "on-request"
+persist_session = true
 
 [agents.thinking]
-name = "openai"
-model = "o3"                    # strongest reasoning
+backend = "openai"
+model = "o3"
 temperature = 0.7
 
 [agents.assistant]
-name = "gemini"
-model = "gemini-2.5-flash"     # fast + cheap for summarization
+backend = "gemini"
+model = "gemini-2.5-flash"
 temperature = 0.3
 
+[agents.formalizer]
+backend = "claude"
+model = "sonnet"
+temperature = 0.2
+
 [agents.review]
-name = "anthropic"
-model = "claude-sonnet-4-0626" # moderate strength for review
+backend = "anthropic"
+model = "claude-sonnet-4-5"
 temperature = 0.5
 
-[agents.cli]
-name = "anthropic"
-model = "claude-sonnet-4-0626" # good at Lean code
-temperature = 0.4
+[agents.falsifier]
+backend = "deepseek"
+model = "deepseek-reasoner"
 
 [lean]
 toolchain = "leanprover/lean4:v4.14.0"
 mathlib = true
+workspace = ".cache/lean-workspace"

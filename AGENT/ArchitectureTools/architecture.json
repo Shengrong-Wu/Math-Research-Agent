@@ -1,0 +1,561 @@
+{
+  "meta": {
+    "title": "Math Agent — Architecture",
+    "source": "AGENT/ArchitectureTools/ArchitectureDiagram.md",
+    "version": "2.0"
+  },
+  "agents": {
+    "thinking": {
+      "label": "Thinking Agent",
+      "role": "Reasoner",
+      "context_mode": "Accumulating",
+      "file": "src/math_agent/agents/thinking.py",
+      "system_prompt": "You are a Thinking Agent in a mathematical proof system. Your role is to reason carefully about mathematical proofs, generate proof strategies, work through individual proof steps with rigour, and verify your own work. Always show your reasoning clearly. When you prove a step, write out the full logical argument.",
+      "description": "Generates roadmaps, proves steps, verifies steps, and repairs proof plans."
+    },
+    "formalizer": {
+      "label": "Formalizer Agent",
+      "role": "Lean-oriented coder",
+      "context_mode": "Fresh / no transcript carryover",
+      "file": "src/math_agent/agents/formalizer.py",
+      "system_prompt": "You are a Formalizer Agent in a mathematical proof system.\nYour role is to translate mathematically plausible statements into Lean 4\ntheorem and lemma skeletons that are type-correct or close to type-correct.\nPrefer precise theorem statements, explicit imports, and conservative use of\n`sorry` over invented Mathlib facts or unsafe guesses.",
+      "description": "Generates Lean theorem statements and lemma sketches for optional verification."
+    },
+    "assistant": {
+      "label": "Assistant Agent",
+      "role": "Organizer",
+      "context_mode": "Accumulating",
+      "file": "src/math_agent/agents/assistant.py",
+      "system_prompt": "You are an Assistant Agent in a mathematical proof system. Your role is to organize and summarize proof work. You maintain a MEMO (concise status updates) and NOTES (detailed proof records). Be precise and concise.",
+      "description": "Maintains MEMO/NOTES, extracts reusable propositions, and compiles final proofs."
+    },
+    "review": {
+      "label": "Review Agent",
+      "role": "Independent reviewer",
+      "context_mode": "Fresh / transcript-blind",
+      "file": "src/math_agent/agents/review.py",
+      "system_prompt": "You are a Review Agent in a mathematical proof system. You are intentionally blind to the proof-development transcript. As an independent reviewer, your job is to rigorously evaluate the proof for correctness. Look for logical gaps, unjustified claims, errors in reasoning, and missing cases. Be thorough and skeptical.",
+      "description": "Reviews the complete proof without replaying the internal proof-development transcript."
+    },
+    "falsifier": {
+      "label": "Falsifier Agent",
+      "role": "Adversarial checker",
+      "context_mode": "Empty (blind)",
+      "file": "src/math_agent/agents/falsifier.py",
+      "system_prompt": "You are a Blind Falsifier -- a mathematical skeptic.\n\nYou are given ONLY a problem statement and a claimed answer or proof.\nYou have NOT seen how the proof was developed. You have NO context about\nthe reasoning process. You must evaluate the claim from scratch.\n\nYour ONLY job is to find problems with the claimed result:\n- Counterexamples that disprove the claim\n- Missing cases or directions (e.g., proved necessary but not sufficient)\n- Boundary conditions that fail\n- Logical gaps in the argument\n\nYou are ADVERSARIAL. Assume the proof is wrong until you convince yourself\notherwise. Be especially suspicious of:\n- \"Find all\" problems where only some solutions might be found\n- Sufficiency: does each claimed solution ACTUALLY satisfy all conditions?\n- Claims about infinite families: can you test specific members?\n\nYou have access to a Python sandbox. Generate Python code to:\n- Test claimed solutions against the original condition\n- Search for counterexamples by brute force\n- Verify boundary cases\n\nWhen generating Python code:\n- Use only standard library + sympy (for math)\n- Keep code simple and focused on ONE test per block\n- Print clear PASS/FAIL results with explanations\n- Always test both directions for \"if and only if\" claims",
+      "description": "Blind counterexample search using analysis plus Python checks."
+    },
+    "lean_toolplane": {
+      "label": "Lean Toolplane",
+      "role": "No LLM",
+      "context_mode": "N/A",
+      "file": "src/math_agent/lean/toolplane.py",
+      "system_prompt": null,
+      "description": "Optional Lean statement/sketch verification and diagnostics."
+    }
+  },
+  "groups": {
+    "input_output": {
+      "label": "Input / Output",
+      "color": "#546E7A"
+    },
+    "orchestration": {
+      "label": "CLI / Coordination",
+      "color": "#37474F"
+    },
+    "runtime": {
+      "label": "Runtime Layer",
+      "color": "#00897B"
+    },
+    "planning": {
+      "label": "Phase 1 — Planning",
+      "color": "#2E7D32"
+    },
+    "execution": {
+      "label": "Phase 1 — Step Loop",
+      "color": "#1565C0"
+    },
+    "validation": {
+      "label": "Validation",
+      "color": "#6A1B9A"
+    },
+    "lean": {
+      "label": "Lean Check",
+      "color": "#EF6C00"
+    }
+  },
+  "nodes": {
+    "problem_input": {
+      "label": "Problem Input",
+      "group": "input_output",
+      "level": 0,
+      "agent": null,
+      "function": null,
+      "file": null,
+      "prompt": null,
+      "description": "User chooses a built-in problem, suite entry, custom question, or a previous run to resume."
+    },
+    "main_cli": {
+      "label": "CLI Entry",
+      "group": "orchestration",
+      "level": 1,
+      "agent": null,
+      "function": "main()",
+      "file": "src/math_agent/main.py",
+      "prompt": null,
+      "description": "Parses CLI flags, handles interactive selection, normalizes backend and Lean options, and dispatches to eval or run mode."
+    },
+    "runtime_config": {
+      "label": "Load Config + Runtime",
+      "group": "runtime",
+      "level": 2,
+      "agent": null,
+      "function": "load_config() / build_role_sessions()",
+      "file": "src/math_agent/config.py; src/math_agent/runtime/factory.py",
+      "prompt": null,
+      "description": "Loads v3-style config with legacy aliases, resolves per-role runtime overrides, and supports codex/claude plus openai/anthropic/deepseek/gemini."
+    },
+    "coordinator": {
+      "label": "Coordinator",
+      "group": "orchestration",
+      "level": 3,
+      "agent": null,
+      "function": "Coordinator.run()",
+      "file": "src/math_agent/orchestrator/coordinator.py",
+      "prompt": null,
+      "description": "Creates the run directory, writes summary scaffolding, prepares optional Lean verification, builds sessions, and runs the Phase 1 pipeline."
+    },
+    "lean_workspace": {
+      "label": "Shared Lean Workspace",
+      "group": "lean",
+      "level": 4,
+      "agent": "lean_toolplane",
+      "function": "Coordinator._prepare_toolplane()",
+      "file": "src/math_agent/orchestrator/coordinator.py",
+      "prompt": null,
+      "description": "When lean_mode is check, prepares `.cache/lean-workspace`, reuses it when the bootstrap stamp matches, and avoids per-run Mathlib cache downloads."
+    },
+    "resume_check": {
+      "label": "Resume Check",
+      "group": "orchestration",
+      "level": 4,
+      "agent": null,
+      "function": "Phase1Runner._try_resume_from_memo_state()",
+      "file": "src/math_agent/orchestrator/phase1.py",
+      "prompt": null,
+      "description": "Loads prior MEMO state, decides whether to start fresh, resume from a partially proved roadmap, or jump directly into proof compilation/review."
+    },
+    "resume_verify": {
+      "label": "Resume Verify",
+      "group": "execution",
+      "level": 5,
+      "agent": "thinking",
+      "function": "verify_proved_step()",
+      "file": "src/math_agent/agents/thinking.py",
+      "prompt": "Problem: {problem_question}\n\nThe following proof was previously written for Step {step_index}:\nStep {step_index}: {step_description}\n\nProof:\n{proof_detail}\n\nCheck whether this proof is correct, rigorous, and proves the EXACT stated step. Look for logical gaps, unjustified claims, errors in reasoning, missing cases, and off-target conclusions.\n\nIf correct, respond with VERIFIED and a brief confirmation.\nIf not correct, respond with INVALID and explain why. A proof that establishes a different claim or shows the step is false must be marked INVALID.",
+      "description": "Re-validates previously proved steps on resume. Invalidated steps and downstream work are demoted before continuing."
+    },
+    "roadmap_generation": {
+      "label": "Generate Roadmaps",
+      "group": "planning",
+      "level": 5,
+      "agent": "thinking",
+      "function": "generate_roadmaps()",
+      "file": "src/math_agent/agents/thinking.py; src/math_agent/agents/prompts/thinking_bundle.md",
+      "prompt": "Problem:\n{problem_question}\n\n{memo_block}{divergence_block}Generate exactly {count} distinct proof roadmap(s). For each roadmap, provide:\n  - \"approach\": a concise description of the proof strategy\n  - \"steps\": a JSON array of STEP OBJECTS with keys:\n      - \"description\": what to prove in that step\n      - \"obligations\": JSON array chosen from\n          [\"necessary_direction\", \"sufficiency_direction\", \"existence_or_construction\", \"boundary_or_small_cases\", \"final_target_link\"]\n  - \"reasoning\": why this approach is promising\n\nSTEP DECOMPOSITION RULES:\n  - Use {n_min} to {n_max} steps. Each step should be a coherent argument unit that an advanced reasoner can carry out and verify in one pass — neither so granular that natural arguments are split mid-thought, nor so coarse that multiple distinct hard ideas are bundled together.\n  - Each step must be independently verifiable.\n  - The hard parts of the proof should be explicit named steps, not buried in a final 'put it all together' step.\n  - If a step involves case analysis with substantively more than 3 different cases, split it.\n  - Do NOT use vague steps like 'combine results', 'finish by standard argument', or 'after routine verification' — these hide the actual work and must be replaced with explicit steps.\n\nIMPORTANT: If the problem asks you to 'find all', 'characterize', 'determine which', or 'classify', your roadmap MUST include:\n  - A step that derives NECESSARY conditions (constraints on solutions)\n  - A step that explicitly verifies SUFFICIENCY (that each candidate actually satisfies the FULL original condition for ALL sub-conditions)\n  - A step that checks small cases or boundary cases computationally\nA proof that only establishes necessary conditions is INCOMPLETE.\n\nIMPORTANT: If the problem states an equivalence ('if and only if', 'iff', 'equivalent') your roadmap MUST include explicit coverage of BOTH directions. A roadmap that proves only one direction is INCOMPLETE.\n\nIMPORTANT: If the theorem requires existence or construction ('there exists', 'construct', 'build', 'define an object', 'exhibit'), your roadmap MUST include:\n  - A step that constructs or exhibits the required object\n  - A step that verifies the constructed object satisfies the FULL target property\nAn existence proof that derives only constraints is INCOMPLETE.\n\nRespond with a JSON array of roadmap objects and nothing else.\nCRITICAL: The \"steps\" field must be an array of STEP OBJECTS, not bare strings.",
+      "description": "Builds roadmap candidates, optionally guided by MEMO and strategic-divergence pressure after repeated failures."
+    },
+    "roadmap_selection": {
+      "label": "Select Roadmap + Statement Check",
+      "group": "planning",
+      "level": 6,
+      "agent": "formalizer",
+      "function": "formalize_statement()",
+      "file": "src/math_agent/orchestrator/phase1.py; src/math_agent/agents/formalizer.py",
+      "prompt": "Problem: {problem_question}\n\nProof approach: {approach}\n\nWrite a Lean 4 theorem statement for this problem. Include:\n- `import Mathlib.Tactic` (and other necessary imports)\n- The theorem statement with the correct type signature\n- A `sorry` proof body\n\nReturn ONLY the Lean 4 code, no explanation.",
+      "description": "Chooses the active roadmap, stores runner-ups, and asks the Formalizer Agent for a Lean theorem statement before optional type-checking."
+    },
+    "step_prove": {
+      "label": "Work Step",
+      "group": "execution",
+      "level": 7,
+      "agent": "thinking",
+      "function": "work_step()",
+      "file": "src/math_agent/agents/thinking.py",
+      "prompt": "Problem: {problem_question}\n\nOverall proof roadmap:\n{roadmap_summary}\n\n{context_block}Step {step_number}: {step_description}\n\nProve this step. Show all reasoning and write a complete, rigorous proof for this step.",
+      "description": "Generates the proof for the current roadmap step. Repair feedback is injected through `context_block` on retries."
+    },
+    "step_verify": {
+      "label": "Self-Verify Step",
+      "group": "execution",
+      "level": 8,
+      "agent": "thinking",
+      "function": "work_step() — verify phase",
+      "file": "src/math_agent/agents/thinking.py",
+      "prompt": "Problem: {problem_question}\n\nOverall proof roadmap:\n{roadmap_summary}\n\nStep {step_number}: {step_description}\n\nCandidate proof:\n{proof_detail}\n\nDetermine whether the candidate proof establishes the EXACT requested step.\n\nRespond in this exact format:\nOUTCOME: <PROVED | REFUTED_STEP | PROVED_DIFFERENT_CLAIM | FAILED>\nEXPLANATION: <1-3 sentences>\nDERIVED_CLAIM: <if PROVED_DIFFERENT_CLAIM, state the claim proved; otherwise NONE>\nFALSE_CLAIM: <if REFUTED_STEP, state the false claim; otherwise NONE>\n\nRules:\n- PROVED means the proof correctly proves the exact stated step.\n- REFUTED_STEP means the proof shows the step is false or gives a counterexample.\n- PROVED_DIFFERENT_CLAIM means the argument proves a different or weaker claim than the requested step.\n- FAILED means the proof has logical gaps, unjustified claims, or does not reach the claimed conclusion.\n- A proof that refutes the step is NOT PROVED.",
+      "description": "Classifies the candidate proof as exact success, false step, off-target success, or failure."
+    },
+    "step_repair": {
+      "label": "Retry With Feedback",
+      "group": "execution",
+      "level": 9,
+      "agent": "thinking",
+      "function": "repair_step_with_feedback()",
+      "file": "src/math_agent/agents/thinking.py",
+      "prompt": "Repair this step using the following feedback:\n{feedback}",
+      "description": "On a bad verification result, feedback is injected into the next prove attempt. The loop retries before escalating to diagnosis."
+    },
+    "record_results": {
+      "label": "Record MEMO / NOTES",
+      "group": "execution",
+      "level": 9,
+      "agent": "assistant",
+      "function": "summarize_step_for_memo()",
+      "file": "src/math_agent/agents/assistant.py",
+      "prompt": "Compress the following proof reasoning into a concise but complete summary preserving all key logical steps:\n\n{step_result.reasoning}",
+      "description": "Writes MEMO and NOTES entries for the step. The assistant only uses the compression prompt when the reasoning payload is large."
+    },
+    "extract_proposition": {
+      "label": "Extract Reusable Proposition",
+      "group": "execution",
+      "level": 10,
+      "agent": "assistant",
+      "function": "extract_proved_proposition()",
+      "file": "src/math_agent/agents/assistant.py",
+      "prompt": "The following proof step was proved:\n\n{step_result.proof_detail}\n\nIf this step establishes a reusable proposition (lemma, claim, or intermediate result) that later steps could cite, respond with exactly two lines:\nID: <short_identifier>\nSTATEMENT: <precise mathematical statement>\n\nIf nothing reusable was proved, respond with: NONE",
+      "description": "Extracts reusable claims from proved steps and records them in MEMO for later roadmap steps."
+    },
+    "lean_sketch_check": {
+      "label": "Lean Sketch Check",
+      "group": "lean",
+      "level": 11,
+      "agent": "formalizer",
+      "function": "formalize_step_sketch()",
+      "file": "src/math_agent/agents/formalizer.py",
+      "prompt": "Problem: {problem_question}\n\nStep just proved: {step_description}\n\nPreviously proved propositions:\n{proved_propositions_text}\n\nWrite a Lean 4 lemma sketch for this step. Include:\n- `import Mathlib.Tactic` (and other necessary imports)\n- The lemma statement with the correct type signature\n- A `sorry` proof body\n\nReturn ONLY the Lean 4 code, no explanation.",
+      "description": "When Lean checking is enabled, the Formalizer Agent generates a sketch that is type-checked inside the shared workspace."
+    },
+    "roadmap_reevaluate": {
+      "label": "Re-evaluate Roadmap",
+      "group": "execution",
+      "level": 12,
+      "agent": "thinking",
+      "function": "re_evaluate_roadmap()",
+      "file": "src/math_agent/agents/thinking.py",
+      "prompt": "Problem: {problem_question}\n\nOverall roadmap:\n{roadmap_summary}\n\nCompleted steps:\n{completed_steps_json}\n\nRemaining steps:\n{remaining_steps_json}\n\nRequired theorem obligations:\n{required_obligations_json}\n\nGiven that the completed steps are proved, answer BOTH:\n1. Do the remaining steps still make sense locally?\n2. If ALL remaining steps were proved, would the roadmap still constitute a COMPLETE proof of the target theorem, including every required obligation above?\n\nRespond in this exact format:\nSTATUS: <ON_TRACK | NEEDS_UPDATE | NEEDS_EXTENSION>\nMISSING_OBLIGATIONS: <JSON array of obligation strings, or []>\nUPDATED_STEPS: <JSON array of step objects with keys index, description, obligations>\nEXPLANATION: <brief explanation>\n\nRules:\n- ON_TRACK means the remaining steps are still plausible and theorem coverage is complete.\n- NEEDS_UPDATE means the remaining steps need rewriting but no new obligation category is missing.\n- NEEDS_EXTENSION means the roadmap is locally coherent but theorem coverage is incomplete; add the missing steps instead of silently dropping the obligation.\n- UPDATED_STEPS may rewrite existing remaining steps and may append new ones. If you add a new step, either omit its index or use a new larger index.\n- Every UPDATED_STEPS object must include an obligations array using the canonical obligation keys whenever applicable.\n- Never delete a necessary/sufficiency/existence/final-synthesis obligation without explicitly replacing it.",
+      "description": "After a successful step, checks whether the remaining roadmap is still locally sound and globally complete."
+    },
+    "step_failure_diagnosis": {
+      "label": "Diagnose Step Failure",
+      "group": "execution",
+      "level": 10,
+      "agent": "thinking",
+      "function": "diagnose_step_failure()",
+      "file": "src/math_agent/agents/thinking.py",
+      "prompt": "Problem: {problem_question}\n\nStep {step_index}: {step_description}\n\nThis step FAILED after {error_count} attempts. Here are the verification errors from each attempt:\n{errors_text}\n\nDiagnose WHY this step failed. Classify as one of:\n- FALSE_PROPOSITION: The claim in this step is actually FALSE. State the specific false claim.\n- LOGICAL_GAP: The claim might be true, but the proof attempts all had logical gaps that could not be bridged.\n- INSUFFICIENT_TECHNIQUE: The claim is likely true but requires a technique or lemma not available in the current approach.\n- UNCLEAR: Cannot determine the cause.\n\nRespond in this exact format:\nDIAGNOSIS: <one of the four categories above>\nEXPLANATION: <1-2 sentences explaining why>\nFALSE_CLAIM: <if FALSE_PROPOSITION, state the specific false claim that future roadmaps must avoid. Otherwise write NONE>",
+      "description": "After retries are exhausted, classifies the reason the step failed so the roadmap can be updated or abandoned intelligently."
+    },
+    "roadmap_failure": {
+      "label": "Re-route After Failure",
+      "group": "execution",
+      "level": 11,
+      "agent": "thinking",
+      "function": "re_evaluate_after_failure()",
+      "file": "src/math_agent/agents/thinking.py",
+      "prompt": "Problem: {problem_question}\n\nOverall roadmap:\n{roadmap_summary}\n\nCompleted steps (PROVED):\n{completed_steps_json}\n\nFAILED step:\n{failed_step_json}\n\nRemaining steps (not yet attempted):\n{remaining_steps_json}\n\nThe failed step could NOT be proved after multiple attempts.\n\nAnalyze whether the remaining steps DEPEND on the failed step. Consider:\n1. Do any remaining steps use the result of the failed step?\n2. Can the remaining steps be restructured to work without it?\n3. Is the failed step a critical link in the proof chain?\n\nIf the remaining steps can be restructured to work without the failed step, respond with NEEDS_UPDATE and provide updated steps as a JSON array.\nIf the failed step is critical and the roadmap cannot succeed without it, respond with ABANDON and explain why.\nFormat: Start your response with NEEDS_UPDATE or ABANDON.",
+      "description": "Decides whether to patch the remaining roadmap or abandon it and move to the next roadmap candidate."
+    },
+    "compile_proof": {
+      "label": "Compile Complete Proof",
+      "group": "validation",
+      "level": 13,
+      "agent": "assistant",
+      "function": "compile_complete_proof()",
+      "file": "src/math_agent/agents/assistant.py",
+      "prompt": "Problem:\n{problem_question}\n\nProof notes from all steps:\n{notes_content}\n\nCompile a clean, complete, and self-contained proof from these notes. The proof should:\n  1. State the theorem clearly\n  2. Present all steps in logical order\n  3. Ensure no gaps between steps\n  4. Use precise mathematical language\n  5. Be suitable for formalization in Lean 4\n\nWrite only the proof, no commentary.",
+      "description": "Compiles NOTES into a single full proof before review."
+    },
+    "review": {
+      "label": "Independent Review",
+      "group": "validation",
+      "level": 14,
+      "agent": "review",
+      "function": "review_proof()",
+      "file": "src/math_agent/agents/review.py",
+      "prompt": "Evaluate this complete proof for correctness from scratch.\n\nProblem:\n{problem_question}\n\nRoadmap and trust summary:\n{roadmap_summary}\n\nComplete proof:\n{complete_proof}\n\nEvaluate the proof carefully. For each issue found, describe it clearly. Then give your overall assessment.\n\nRespond in this format:\nVERDICT: PASS | REJECT | UNKNOWN\nGAPS: (list each gap or issue on its own line, or NONE if no gaps)\nCONFIDENCE: (a number from 0.0 to 1.0 indicating your confidence that the proof is correct)\nREASONING: (your overall assessment)",
+      "description": "Reviews the finished proof with an explicit verdict, gap list, confidence, and reasoning."
+    },
+    "repair_proof": {
+      "label": "Repair Reviewed Proof",
+      "group": "validation",
+      "level": 15,
+      "agent": "thinking",
+      "function": "repair_proof()",
+      "file": "src/math_agent/agents/thinking.py",
+      "prompt": "Problem: {problem_question}\n\nYour proof was reviewed and found to be MOSTLY correct, but has specific gaps that need fixing.\n\nCurrent proof:\n{complete_proof}\n\nGAPS FOUND BY REVIEWER:\n{gaps_text}\n\nREVIEWER'S REASONING:\n{reviewer_reasoning}\n\nINSTRUCTIONS:\n1. Do NOT rewrite the entire proof from scratch.\n2. Keep everything that is correct.\n3. Fix ONLY the specific gaps identified above.\n4. The reviewer may have suggested specific fixes -- use them.\n5. If a gap is about a wrong argument for a specific case, replace that argument with a correct one.\n6. Write the COMPLETE repaired proof (not just the fix).\n\nWrite the repaired proof now.",
+      "description": "If review rejects the proof but the gaps look repairable, the thinking agent rewrites only the broken parts and loops back to review."
+    },
+    "falsifier_analysis": {
+      "label": "Blind Falsifier Analysis",
+      "group": "validation",
+      "level": 16,
+      "agent": "falsifier",
+      "function": "falsify() — analysis",
+      "file": "src/math_agent/agents/falsifier.py",
+      "prompt": "PROBLEM STATEMENT:\n{problem_question}\n\nCLAIMED ANSWER/PROOF:\n{claimed_answer}\n\n---\n\nYou are a blind falsifier. You have NOT seen how this proof was developed. Analyze this claim skeptically.\n\nFirst, identify potential weaknesses:\n1. What COULD be wrong with this claim?\n2. Are there boundary cases to check?\n3. Does the proof establish BOTH necessary and sufficient conditions?\n4. For 'find all' problems: are there solutions the proof might have missed?\n\nThen, generate Python test code to check the claim. Wrap each test in a ```python code block. Each test should:\n- Test ONE specific aspect of the claim\n- Print clear results (PASS/FAIL with explanation)\n- Use only standard library + sympy\n- Be self-contained (no imports between blocks)\n\nGenerate at least 2-3 different tests covering:\n- Forward direction: do claimed solutions actually satisfy the condition?\n- Backward direction: are there other solutions the proof missed?\n- Boundary/edge cases\n\nIMPORTANT: For 'find all' problems, ALWAYS brute-force check small values to find the complete solution set and compare with the claim.",
+      "description": "Generates blind adversarial analysis plus Python checks with no access to the proof-development transcript."
+    },
+    "falsifier_run": {
+      "label": "Run Python Checks",
+      "group": "validation",
+      "level": 17,
+      "agent": null,
+      "function": "_run_python_sandbox()",
+      "file": "src/math_agent/agents/falsifier.py",
+      "prompt": null,
+      "description": "Runs the generated Python checks in subprocess sandboxes and captures outputs for the final verdict."
+    },
+    "falsifier_verdict": {
+      "label": "Falsifier Verdict",
+      "group": "validation",
+      "level": 18,
+      "agent": "falsifier",
+      "function": "falsify() — verdict",
+      "file": "src/math_agent/agents/falsifier.py",
+      "prompt": "Here are the results of your Python tests:\n\nTest 1: {description}\nStatus: PASSED/FAILED/TIMED OUT\nOutput:\n{stdout[:500]}\nErrors:\n{stderr[:300]}\n\n...\n\nBased on these test results AND your initial analysis, give your FINAL VERDICT.\n\nRespond in this EXACT format:\nVERDICT: PASS | FAIL | UNCERTAIN\nCOUNTEREXAMPLE: (describe any counterexample found, or NONE)\nMISSING_CASES: (list any missing cases, one per line, or NONE)\nREASONING: (your overall assessment)\nSUGGESTIONS: (what should be fixed or checked further, or NONE)",
+      "description": "Produces the final adversarial verdict after executing the Python checks."
+    },
+    "success_output": {
+      "label": "Success",
+      "group": "input_output",
+      "level": 19,
+      "agent": null,
+      "function": null,
+      "file": null,
+      "prompt": null,
+      "description": "Run completes with a passing review/falsifier outcome and writes summary, MEMO, NOTES, and runtime artifacts."
+    },
+    "failure_output": {
+      "label": "Failure",
+      "group": "input_output",
+      "level": 19,
+      "agent": null,
+      "function": null,
+      "file": null,
+      "prompt": null,
+      "description": "Run terminates after roadmap exhaustion, unrepaired review failure, or a falsifier counterexample."
+    }
+  },
+  "edges": [
+    {
+      "from": "problem_input",
+      "to": "main_cli",
+      "label": "",
+      "description": "User starts a solve, resume, or eval flow."
+    },
+    {
+      "from": "main_cli",
+      "to": "runtime_config",
+      "label": "load",
+      "description": "CLI flags and interactive choices resolve into config and backend selections."
+    },
+    {
+      "from": "runtime_config",
+      "to": "coordinator",
+      "label": "run",
+      "description": "Configured problem and runtime choices are passed into the coordinator."
+    },
+    {
+      "from": "coordinator",
+      "to": "lean_workspace",
+      "label": "lean_mode=check",
+      "description": "Optional shared Lean workspace bootstrap and reuse."
+    },
+    {
+      "from": "coordinator",
+      "to": "resume_check",
+      "label": "enter phase1",
+      "description": "Phase 1 starts after run directory and runtime setup."
+    },
+    {
+      "from": "lean_workspace",
+      "to": "resume_check",
+      "label": "toolplane ready",
+      "description": "Resume / fresh planning continues after optional Lean setup."
+    },
+    {
+      "from": "resume_check",
+      "to": "roadmap_generation",
+      "label": "fresh planning",
+      "description": "No reusable in-progress roadmap exists."
+    },
+    {
+      "from": "resume_check",
+      "to": "resume_verify",
+      "label": "recheck prior proofs",
+      "description": "Previously PROVED steps are re-verified before reuse."
+    },
+    {
+      "from": "resume_verify",
+      "to": "step_prove",
+      "label": "resume work",
+      "description": "Continue from the first unproved or invalidated step."
+    },
+    {
+      "from": "resume_verify",
+      "to": "compile_proof",
+      "label": "all proved",
+      "description": "If the roadmap is already fully proved, jump directly to proof compilation and review."
+    },
+    {
+      "from": "roadmap_generation",
+      "to": "roadmap_selection",
+      "label": "choose roadmap",
+      "description": "Phase 1 selects the active roadmap and stores runner-ups."
+    },
+    {
+      "from": "roadmap_selection",
+      "to": "step_prove",
+      "label": "start step loop",
+      "description": "Begin executing the selected roadmap."
+    },
+    {
+      "from": "step_prove",
+      "to": "step_verify",
+      "label": "candidate proof",
+      "description": "Every attempted step is explicitly self-verified."
+    },
+    {
+      "from": "step_verify",
+      "to": "record_results",
+      "label": "PROVED",
+      "description": "Exact proof success advances the roadmap."
+    },
+    {
+      "from": "step_verify",
+      "to": "step_repair",
+      "label": "FAILED / off-target",
+      "description": "Repair feedback is fed into the next prove attempt."
+    },
+    {
+      "from": "step_repair",
+      "to": "step_prove",
+      "label": "retry",
+      "description": "The step loop retries with injected feedback."
+    },
+    {
+      "from": "step_repair",
+      "to": "step_failure_diagnosis",
+      "label": "retries exhausted",
+      "description": "Escalate to a structured diagnosis after repeated failure."
+    },
+    {
+      "from": "record_results",
+      "to": "extract_proposition",
+      "label": "store result",
+      "description": "Successful step output is written to MEMO/NOTES."
+    },
+    {
+      "from": "extract_proposition",
+      "to": "lean_sketch_check",
+      "label": "lean_mode=check",
+      "description": "Proved steps are type-checked as Lean sketches when Lean is enabled."
+    },
+    {
+      "from": "extract_proposition",
+      "to": "roadmap_reevaluate",
+      "label": "lean_mode=off",
+      "description": "Without Lean checking, proceed directly to roadmap re-evaluation."
+    },
+    {
+      "from": "lean_sketch_check",
+      "to": "roadmap_reevaluate",
+      "label": "continue",
+      "description": "Roadmap re-evaluation sees any sketch-check feedback."
+    },
+    {
+      "from": "roadmap_reevaluate",
+      "to": "step_prove",
+      "label": "next step",
+      "description": "Continue the roadmap after successful local/global coverage checks."
+    },
+    {
+      "from": "roadmap_reevaluate",
+      "to": "compile_proof",
+      "label": "roadmap complete",
+      "description": "All required steps are proved."
+    },
+    {
+      "from": "step_failure_diagnosis",
+      "to": "roadmap_failure",
+      "label": "diagnosed",
+      "description": "Use structured failure information to decide whether to patch or abandon the roadmap."
+    },
+    {
+      "from": "roadmap_failure",
+      "to": "step_prove",
+      "label": "needs update",
+      "description": "A locally repaired roadmap continues in the step loop."
+    },
+    {
+      "from": "roadmap_failure",
+      "to": "roadmap_generation",
+      "label": "abandon",
+      "description": "Move to the next roadmap attempt."
+    },
+    {
+      "from": "roadmap_failure",
+      "to": "failure_output",
+      "label": "no roadmaps left",
+      "description": "The run fails once all roadmap attempts are exhausted."
+    },
+    {
+      "from": "compile_proof",
+      "to": "review",
+      "label": "review",
+      "description": "The compiled proof is sent to the independent reviewer."
+    },
+    {
+      "from": "review",
+      "to": "repair_proof",
+      "label": "REJECT",
+      "description": "Repair the proof when the reviewer finds fixable gaps."
+    },
+    {
+      "from": "repair_proof",
+      "to": "review",
+      "label": "re-review",
+      "description": "Patched proofs go back through the reviewer."
+    },
+    {
+      "from": "review",
+      "to": "falsifier_analysis",
+      "label": "PASS / proceed",
+      "description": "Only proofs that clear review go to the blind falsifier."
+    },
+    {
+      "from": "falsifier_analysis",
+      "to": "falsifier_run",
+      "label": "run tests",
+      "description": "Execute generated Python checks."
+    },
+    {
+      "from": "falsifier_run",
+      "to": "falsifier_verdict",
+      "label": "summarize",
+      "description": "The falsifier reads the sandbox results and decides the final outcome."
+    },
+    {
+      "from": "falsifier_verdict",
+      "to": "success_output",
+      "label": "PASS",
+      "description": "No counterexample found and the claim survives adversarial checks."
+    },
+    {
+      "from": "falsifier_verdict",
+      "to": "failure_output",
+      "label": "FAIL",
+      "description": "Counterexample or missing-case failure."
+    }
+  ]
+}

@@ -1,26 +1,36 @@
+import asyncio
+
 import pytest
 from math_agent.context.compression import ContextCompressor
 from math_agent.context.token_budget import TokenBudget
-from math_agent.llm.base import LLMMessage
+from math_agent.runtime import RuntimeMessage
 
 class TestCompression:
-    @pytest.mark.asyncio
-    async def test_no_compression_low_pressure(self):
+    def test_compression_estimates_unseeded_budget_from_messages(self):
+        budget = TokenBudget(max_tokens=10_000)
+        compressor = ContextCompressor(budget)
+        long_msg = RuntimeMessage("assistant", "x" * 25_000)
+        messages = [RuntimeMessage("user", "Hi"), long_msg]
+        result, reset = asyncio.run(compressor.compress_if_needed(messages))
+        assert len(result[1].content) < 25_000
+        assert not reset
+        assert budget.pressure().used_tokens > 0
+
+    def test_no_compression_low_pressure(self):
         budget = TokenBudget(max_tokens=200_000)
         budget.update(10_000)
         compressor = ContextCompressor(budget)
-        messages = [LLMMessage("user", "Hello")]
-        result, reset = await compressor.compress_if_needed(messages)
+        messages = [RuntimeMessage("user", "Hello")]
+        result, reset = asyncio.run(compressor.compress_if_needed(messages))
         assert result == messages
         assert not reset
 
-    @pytest.mark.asyncio
-    async def test_layer1_truncates_long_messages(self):
+    def test_layer1_truncates_long_messages(self):
         budget = TokenBudget(max_tokens=10_000)
         budget.update(7_000)  # 70% -> moderate
         compressor = ContextCompressor(budget)
-        long_msg = LLMMessage("assistant", "x" * 5000)
-        messages = [LLMMessage("user", "Hi"), long_msg]
-        result, reset = await compressor.compress_if_needed(messages)
-        assert len(result[1].content) < 5000
+        long_msg = RuntimeMessage("assistant", "x" * 25_000)
+        messages = [RuntimeMessage("user", "Hi"), long_msg]
+        result, reset = asyncio.run(compressor.compress_if_needed(messages))
+        assert len(result[1].content) < 25_000
         assert not reset

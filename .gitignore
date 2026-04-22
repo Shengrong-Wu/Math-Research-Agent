@@ -11,6 +11,8 @@ env/
 .env
 .env.*
 runs/
+/AGENTS/
+.cache/
 lean-workspace/lake-packages/
 lean-workspace/.lake/
 *.olean
@@ -20,4 +22,6 @@ lean-workspace/.lake/
 *~
 .idea/
 .vscode/
+.claude/
 *.log
+ColabNote.ipynb

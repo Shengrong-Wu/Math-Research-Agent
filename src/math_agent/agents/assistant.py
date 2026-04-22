@@ -1,13 +1,6 @@
-"""The Assistant Agent -- organizes MEMO and NOTES.
-
-Responsible for summarizing proof step results into concise MEMO updates
-and detailed NOTES entries, extracting reusable propositions, and compiling
-a clean complete proof from accumulated notes.
-"""
+"""The Assistant Agent -- organizes MEMO and NOTES."""
 
 from __future__ import annotations
-
-from math_agent.llm.base import BaseLLMClient, LLMMessage
 
 from .base import BaseAgent, StepResult
 
@@ -20,60 +13,55 @@ _SYSTEM_PROMPT = (
 
 
 class AssistantAgent(BaseAgent):
-    """Organizes MEMO and NOTES for the proof pipeline.
-
-    Summarizes step results, extracts reusable propositions, and compiles
-    a complete proof from accumulated notes.
-    """
+    """Organizes MEMO and NOTES for the proof pipeline."""
 
     async def summarize_step_for_memo(
         self,
         step_index: int,
         step_result: StepResult,
     ) -> tuple[str, str]:
-        """Produce a brief MEMO update and a detailed NOTES entry for a step.
-
-        For straightforward results the formatting is done locally without
-        an LLM call.  If the reasoning text is very long (>2000 chars),
-        the LLM is used to compress it into a concise summary.
-
-        Args:
-            step_index: Zero-based index of the step.
-            step_result: The StepResult from the thinking agent.
-
-        Returns:
-            A tuple of (brief_memo_update, detailed_notes_entry).
-        """
-        verified_tag = "verified" if step_result.verification_passed else "unverified"
-
-        # MEMO: one-line status
-        memo_line = (
-            f"Step {step_index + 1}: {step_result.status} ({verified_tag})"
+        verified_tag = (
+            step_result.verification_outcome.lower()
+            if step_result.verification_outcome
+            else ("verified" if step_result.verification_passed else "unverified")
         )
+
+        memo_line = f"Step {step_index}: {step_result.status} ({verified_tag})"
         if step_result.error_reason:
             memo_line += f" -- {step_result.error_reason[:120]}"
 
-        # NOTES: full proof detail
         notes_entry = (
-            f"=== Step {step_index + 1} [{step_result.status}] ===\n"
+            f"=== Step {step_index} [{step_result.status}] ===\n"
             f"Verification: {verified_tag}\n\n"
         )
+        if step_result.verification_notes:
+            notes_entry += f"Verification notes:\n{step_result.verification_notes}\n\n"
+        if step_result.derived_claim:
+            notes_entry += f"Derived claim:\n{step_result.derived_claim}\n\n"
+        if step_result.false_claim:
+            notes_entry += f"False claim:\n{step_result.false_claim}\n\n"
 
         if len(step_result.reasoning) > 2000:
-            # Use LLM to compress the long reasoning
             compress_content = (
                 "Compress the following proof reasoning into a concise but "
                 "complete summary preserving all key logical steps:\n\n"
                 f"{step_result.reasoning}"
             )
-            messages = [LLMMessage(role="user", content=compress_content)]
-            response = await self.client.generate(messages, system=_SYSTEM_PROMPT)
+            response = await self._request_text(
+                compress_content,
+                system_prompt=_SYSTEM_PROMPT,
+                include_context=False,
+                record_history=False,
+                metadata={
+                    "callsite": "assistant.summarize_step_for_memo",
+                    "document_char_counts": {"reasoning": len(step_result.reasoning)},
+                },
+            )
             notes_entry += f"Reasoning (compressed):\n{response.content}\n\n"
         else:
             notes_entry += f"Reasoning:\n{step_result.reasoning}\n\n"
 
         notes_entry += f"Proof detail:\n{step_result.proof_detail}\n"
-
         if step_result.error_reason:
             notes_entry += f"\nError reason:\n{step_result.error_reason}\n"
 
@@ -83,17 +71,6 @@ class AssistantAgent(BaseAgent):
         self,
         step_result: StepResult,
     ) -> tuple[str, str] | None:
-        """Extract a reusable proposition from a proved step, if any.
-
-        Uses the LLM to determine whether the step established a reusable
-        fact and, if so, to produce a concise identifier and statement.
-
-        Args:
-            step_result: The StepResult to inspect.
-
-        Returns:
-            A (prop_id, statement) tuple, or None if nothing reusable was proved.
-        """
         if step_result.status != "PROVED":
             return None
 
@@ -107,12 +84,14 @@ class AssistantAgent(BaseAgent):
             "STATEMENT: <precise mathematical statement>\n\n"
             "If nothing reusable was proved, respond with: NONE"
         )
-
-        messages = [
-            *self._context,
-            LLMMessage(role="user", content=extract_content),
-        ]
-        response = await self.client.generate(messages, system=_SYSTEM_PROMPT)
+        response = await self._request_text(
+            extract_content,
+            system_prompt=_SYSTEM_PROMPT,
+            metadata={
+                "callsite": "assistant.extract_proved_proposition",
+                "document_char_counts": {"proof_detail": len(step_result.proof_detail)},
+            },
+        )
 
         text = response.content.strip()
         if text.upper().startswith("NONE"):
@@ -135,19 +114,8 @@ class AssistantAgent(BaseAgent):
         self,
         notes_content: str,
         problem_question: str,
+        extra_metadata: dict | None = None,
     ) -> str:
-        """Compile a clean, complete proof from the full NOTES.
-
-        Produces a polished proof suitable for the formal verification
-        phase (Phase 2).
-
-        Args:
-            notes_content: The accumulated NOTES containing all step proofs.
-            problem_question: The original problem statement.
-
-        Returns:
-            A clean, complete proof as a single string.
-        """
         compile_content = (
             f"Problem:\n{problem_question}\n\n"
             f"Proof notes from all steps:\n{notes_content}\n\n"
@@ -160,14 +128,22 @@ class AssistantAgent(BaseAgent):
             "  5. Be suitable for formalization in Lean 4\n\n"
             "Write only the proof, no commentary."
         )
-
-        messages = [
-            *self._context,
-            LLMMessage(role="user", content=compile_content),
-        ]
-        response = await self.client.generate(messages, system=_SYSTEM_PROMPT)
-
-        self.add_to_context(LLMMessage(role="user", content=compile_content))
-        self.add_to_context(LLMMessage(role="assistant", content=response.content))
-
+        extra = dict(extra_metadata or {})
+        doc_counts = {
+            "notes_content": len(notes_content),
+            "problem_question": len(problem_question),
+        }
+        doc_counts.update(extra.pop("document_char_counts", {}))
+        response = await self._request_text(
+            compile_content,
+            system_prompt=_SYSTEM_PROMPT,
+            include_context=False,
+            record_history=False,
+            use_native_session=False,
+            metadata={
+                "callsite": "assistant.compile_complete_proof",
+                "document_char_counts": doc_counts,
+                **extra,
+            },
+        )
         return response.content

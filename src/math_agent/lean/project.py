@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -20,19 +21,35 @@ class LeanProject:
         self._module_dir = workspace / "MathAgent"
 
     # ------------------------------------------------------------------
+    # Mathlib version tag derived from toolchain
+    # ------------------------------------------------------------------
+
+    @property
+    def _mathlib_rev(self) -> str:
+        """Extract a Mathlib-compatible version tag from the toolchain string.
+
+        ``leanprover/lean4:v4.28.0`` → ``v4.28.0``.
+        Falls back to ``master`` if the pattern doesn't match.
+        """
+        m = re.search(r"v[\d]+\.[\d]+\.[\d]+", self.toolchain)
+        return m.group(0) if m else "master"
+
+    # ------------------------------------------------------------------
     # Project initialisation
     # ------------------------------------------------------------------
 
     def init(self) -> None:
-        """Create *lakefile.lean*, *lean-toolchain*, and the
+        """Create *lakefile.toml*, *lean-toolchain*, and the
         ``MathAgent/`` source directory if they do not already exist.
         """
         self.workspace.mkdir(parents=True, exist_ok=True)
         self._module_dir.mkdir(parents=True, exist_ok=True)
 
-        lakefile = self.workspace / "lakefile.lean"
-        if not lakefile.exists():
-            lakefile.write_text(self._generate_lakefile())
+        # Prefer lakefile.toml; also accept legacy lakefile.lean
+        lakefile_toml = self.workspace / "lakefile.toml"
+        lakefile_lean = self.workspace / "lakefile.lean"
+        if not lakefile_toml.exists() and not lakefile_lean.exists():
+            lakefile_toml.write_text(self._generate_lakefile_toml())
 
         toolchain_file = self.workspace / "lean-toolchain"
         if not toolchain_file.exists():
@@ -43,12 +60,13 @@ class LeanProject:
     # ------------------------------------------------------------------
 
     def add_module(self, name: str, content: str) -> Path:
-        """Write a ``.lean`` file to ``MathAgent/{name}.lean`` and return
-        its path.
+        """Write a ``.lean`` file to ``MathAgent/{name}.lean``, update
+        the root import file, and return the module path.
         """
         path = self._module_path(name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
+        self._update_root_import()
         return path
 
     def list_modules(self) -> list[str]:
@@ -66,10 +84,13 @@ class LeanProject:
         return self._module_path(name).read_text()
 
     def write_module(self, name: str, content: str) -> None:
-        """Write *content* to ``MathAgent/{name}.lean``."""
+        """Write *content* to ``MathAgent/{name}.lean`` and refresh the
+        root import file.
+        """
         path = self._module_path(name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
+        self._update_root_import()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -78,29 +99,51 @@ class LeanProject:
     def _module_path(self, name: str) -> Path:
         return self._module_dir / f"{name}.lean"
 
-    def _generate_lakefile(self) -> str:
-        lines: list[str] = [
-            'import Lake',
-            'open Lake DSL',
-            '',
-            'package mathAgent where',
-            '  leanOptions := #[',
-            '    \u27e8`autoImplicit, false\u27e9',
-            '  ]',
+    def _update_root_import(self) -> None:
+        """Write (or overwrite) ``MathAgent.lean`` at the workspace root.
+
+        This file simply imports every module under ``MathAgent/``, which
+        is required by Lake to build the ``MathAgent`` library target.
+        """
+        modules = self.list_modules()
+        lines = [
+            "-- Auto-generated root import file. Do not edit manually.",
+        ]
+        for mod in modules:
+            lines.append(f"import MathAgent.{mod}")
+        lines.append("")
+        root = self.workspace / "MathAgent.lean"
+        root.write_text("\n".join(lines))
+
+    def _generate_lakefile_toml(self) -> str:
+        """Generate a ``lakefile.toml`` with Mathlib pinned to the
+        toolchain version tag.
+        """
+        lines = [
+            'name = "mathAgent"',
+            'version = "0.1.0"',
+            'keywords = ["math"]',
+            'defaultTargets = ["MathAgent"]',
+            "",
+            "[leanOptions]",
+            "autoImplicit = false",
+            "relaxedAutoImplicit = false",
+            "",
         ]
 
         if self.use_mathlib:
+            rev = self._mathlib_rev
             lines += [
-                '',
-                'require mathlib from git',
-                '  "https://github.com/leanprover-community/mathlib4"',
+                "[[require]]",
+                'name = "mathlib"',
+                'scope = "leanprover-community"',
+                f'rev = "{rev}"',
+                "",
             ]
 
         lines += [
-            '',
-            '@[default_target]',
-            'lean_lib MathAgent where',
-            '  srcDir := "."',
-            '',
+            "[[lean_lib]]",
+            'name = "MathAgent"',
+            "",
         ]
         return "\n".join(lines)

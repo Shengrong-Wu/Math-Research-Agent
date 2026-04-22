@@ -1,7 +1,11 @@
 from __future__ import annotations
 import pytest
 from pathlib import Path
-from math_agent.documents.memo import Memo, MemoState, RoadmapStep, ProvedProposition, ArchivedRoadmap
+from math_agent.documents.memo import (
+    Memo,
+    MacroStep,
+    RoadmapStep,
+)
 
 class TestMemo:
     def test_empty_load(self, tmp_path: Path):
@@ -38,3 +42,57 @@ class TestMemo:
         state = memo.load()
         assert len(state.previous_roadmaps) == 1
         assert state.previous_roadmaps[0].name == "Roadmap 1"
+
+    def test_upsert_formal_artifact_and_archive_summary(self, tmp_path: Path):
+        memo = Memo(tmp_path / "MEMO.md")
+        steps = [RoadmapStep(1, "Prove lemma A", "FAILED")]
+        memo.set_current_roadmap(steps)
+        memo.upsert_formal_artifact(
+            claim="Prove lemma A",
+            proof_text="A detailed proof",
+            claim_status="lean_sketch_checked",
+            debt_label="none",
+        )
+        memo.archive_roadmap(
+            "Roadmap 1",
+            "Lemma-first approach",
+            "Step failed",
+            [],
+            "Need a better lemma",
+        )
+        state = memo.load()
+        assert state.previous_roadmaps[0].artifact_summaries
+        assert "lean_sketch_checked" in state.previous_roadmaps[0].artifact_summaries[0]
+
+    def test_macro_roadmap_and_runner_up_roundtrip(self, tmp_path: Path):
+        memo = Memo(tmp_path / "MEMO.md")
+        macro = MacroStep(
+            index=1,
+            description="Reduce to cases",
+            deliverable="Case split",
+            sub_steps=[
+                RoadmapStep(1, "Handle case A", "UNPROVED"),
+                RoadmapStep(2, "Handle case B", "UNPROVED"),
+            ],
+        )
+        memo.set_macro_roadmap([macro])
+        memo.store_runner_ups(
+            [
+                {
+                    "approach": "Hierarchical fallback",
+                    "steps": ["Handle case A", "Handle case B"],
+                    "macro_steps": [
+                        {
+                            "description": "Reduce to cases",
+                            "deliverable": "Case split",
+                            "steps": ["Handle case A", "Handle case B"],
+                        }
+                    ],
+                    "reasoning": "Keep the same structure",
+                }
+            ]
+        )
+        state = memo.load()
+        assert state.macro_roadmap is not None
+        assert state.macro_roadmap[0].deliverable == "Case split"
+        assert state.runner_up_roadmaps[0].macro_steps[0]["deliverable"] == "Case split"

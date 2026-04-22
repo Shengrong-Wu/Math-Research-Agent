@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Math Agent — Architecture</title>
+  <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #header {
+      background: #161b22;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    #header h1 { font-size: 16px; color: #f0f6fc; white-space: nowrap; }
+    #legend { display: flex; gap: 14px; flex-wrap: wrap; flex: 1; }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #8b949e; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+    #controls { display: flex; gap: 8px; }
+    #controls button {
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #controls button:hover { background: #30363d; }
+
+    #main { display: flex; flex: 1; overflow: hidden; }
+
+    #graph-container { flex: 1; position: relative; }
+    #graph { width: 100%; height: 100%; }
+
+    #panel {
+      width: 0;
+      overflow: hidden;
+      background: #161b22;
+      border-left: 1px solid #30363d;
+      transition: width 0.25s ease;
+      flex-shrink: 0;
+    }
+    #panel.open { width: 420px; }
+
+    #panel-scroll {
+      width: 420px;
+      height: 100%;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    #panel-scroll h2 {
+      font-size: 16px;
+      color: #f0f6fc;
+      margin-bottom: 8px;
+      padding-right: 30px;
+    }
+
+    .close-btn {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      background: none;
+      border: none;
+      color: #8b949e;
+      font-size: 22px;
+      cursor: pointer;
+      line-height: 1;
+      z-index: 10;
+    }
+    .close-btn:hover { color: #f0f6fc; }
+
+    #panel-inner { position: relative; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 12px;
+    }
+
+    .section {
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #21262d;
+    }
+    .section:last-child { border-bottom: none; }
+    .section h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #8b949e;
+      margin-bottom: 6px;
+    }
+    .section p, .section code {
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .section code {
+      background: #0d1117;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+    }
+
+    .prompt-block {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      padding: 12px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11.5px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      max-height: 350px;
+      overflow-y: auto;
+      color: #c9d1d9;
+    }
+
+    .agent-card {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+    .agent-card .agent-name { font-weight: 600; color: #f0f6fc; font-size: 13px; }
+    .agent-card .agent-meta { font-size: 12px; color: #8b949e; margin-top: 2px; }
+
+    .context-tag {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      margin-top: 4px;
+    }
+
+    #edge-panel {
+      width: 0;
+      overflow: hidden;
+      background: #161b22;
+      border-left: 1px solid #30363d;
+      transition: width 0.25s ease;
+      flex-shrink: 0;
+    }
+    #edge-panel.open { width: 320px; }
+    #edge-panel-scroll {
+      width: 320px;
+      height: 100%;
+      overflow-y: auto;
+      padding: 20px;
+    }
+    #edge-panel-scroll h2 { font-size: 15px; color: #f0f6fc; margin-bottom: 12px; padding-right: 30px; }
+
+    .edge-close-btn {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      background: none;
+      border: none;
+      color: #8b949e;
+      font-size: 22px;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .edge-close-btn:hover { color: #f0f6fc; }
+    #edge-panel-inner { position: relative; }
+
+    #load-error {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      padding: 40px;
+    }
+    #load-error h2 { color: #f85149; margin-bottom: 12px; }
+    #load-error code {
+      display: block;
+      background: #161b22;
+      padding: 12px 20px;
+      border-radius: 6px;
+      margin: 12px 0;
+      color: #79c0ff;
+      font-size: 13px;
+    }
+    #load-error p { color: #8b949e; margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1>Math Agent &mdash; Architecture</h1>
+    <div id="legend"></div>
+    <div id="controls">
+      <button id="fit-btn" title="Fit graph to viewport">Fit</button>
+      <button id="toggle-physics-btn" title="Toggle physics simulation">Physics: Off</button>
+    </div>
+  </div>
+  <div id="main">
+    <div id="graph-container">
+      <div id="graph"></div>
+      <div id="load-error">
+        <h2>Could not load architecture.json</h2>
+        <p>This file must be served over HTTP. Run from the ArchitectureTools directory:</p>
+        <code>python3 -m http.server 8091</code>
+        <p>Then open <strong>http://localhost:8091</strong></p>
+      </div>
+    </div>
+    <div id="panel">
+      <div id="panel-scroll">
+        <div id="panel-inner"></div>
+      </div>
+    </div>
+    <div id="edge-panel">
+      <div id="edge-panel-scroll">
+        <div id="edge-panel-inner"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let archData = null;
+    let network = null;
+    let physicsEnabled = false;
+
+    fetch('architecture.json')
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(data => { archData = data; buildGraph(data); })
+      .catch(() => { document.getElementById('load-error').style.display = 'block'; });
+
+    function buildGraph(data) {
+      // Build legend
+      const legend = document.getElementById('legend');
+      for (const [id, g] of Object.entries(data.groups)) {
+        const item = document.createElement('div');
+        item.className = 'legend-item';
+        item.innerHTML = `<span class="legend-dot" style="background:${g.color}"></span>${g.label}`;
+        legend.appendChild(item);
+      }
+
+      // Build vis.js nodes
+      const nodes = [];
+      for (const [id, node] of Object.entries(data.nodes)) {
+        const group = data.groups[node.group];
+        const isLLM = !!node.agent && node.prompt;
+        const isIO = node.group === 'input_output';
+        nodes.push({
+          id: id,
+          label: node.label,
+          level: node.level,
+          group: node.group,
+          shape: isIO ? 'ellipse' : 'box',
+          color: {
+            background: group.color + (isLLM ? '' : '88'),
+            border: group.color,
+            highlight: { background: group.color, border: '#f0f6fc' },
+            hover: { background: group.color + 'cc', border: '#f0f6fc' }
+          },
+          font: {
+            color: '#f0f6fc',
+            size: 12,
+            face: "'Segoe UI', system-ui, sans-serif"
+          },
+          borderWidth: isLLM ? 2 : 1,
+          borderWidthSelected: 3,
+          margin: { top: 8, bottom: 8, left: 12, right: 12 },
+          widthConstraint: { minimum: 100, maximum: 200 },
+          shadow: { enabled: true, color: 'rgba(0,0,0,0.3)', size: 6, x: 2, y: 2 }
+        });
+      }
+
+      // Build vis.js edges
+      const edges = [];
+      for (let i = 0; i < data.edges.length; i++) {
+        const edge = data.edges[i];
+        const fromNode = data.nodes[edge.from];
+        const toNode = data.nodes[edge.to];
+        const isBack = fromNode && toNode && fromNode.level >= toNode.level;
+
+        edges.push({
+          id: 'e' + i,
+          from: edge.from,
+          to: edge.to,
+          label: edge.label || '',
+          title: edge.description || edge.label || '',
+          arrows: { to: { enabled: true, scaleFactor: 0.7 } },
+          color: {
+            color: isBack ? '#da3633' : '#484f58',
+            highlight: '#f0f6fc',
+            hover: '#8b949e'
+          },
+          font: {
+            color: '#8b949e',
+            size: 9,
+            face: "'Segoe UI', system-ui, sans-serif",
+            strokeWidth: 3,
+            strokeColor: '#0d1117',
+            align: 'middle'
+          },
+          smooth: isBack
+            ? { enabled: true, type: 'curvedCW', roundness: 0.25 }
+            : { enabled: true, type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.4 },
+          width: 1.5,
+          hoverWidth: 0.5,
+          selectionWidth: 1,
+          _edgeData: edge
+        });
+      }
+
+      // Vis.js options
+      const options = {
+        layout: {
+          hierarchical: {
+            enabled: true,
+            direction: 'UD',
+            sortMethod: 'directed',
+            levelSeparation: 55,
+            nodeSpacing: 200,
+            treeSpacing: 250,
+            blockShifting: true,
+            edgeMinimization: true,
+            parentCentralization: true
+          }
+        },
+        physics: {
+          enabled: false
+        },
+        interaction: {
+          hover: true,
+          tooltipDelay: 200,
+          navigationButtons: false,
+          keyboard: { enabled: true }
+        },
+        nodes: {
+          shapeProperties: { borderRadius: 4 }
+        },
+        edges: {
+          chosen: true
+        }
+      };
+
+      // Create network
+      const container = document.getElementById('graph');
+      network = new vis.Network(container, { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) }, options);
+
+      // Initial view: focus on coordinator area
+      network.once('stabilizationIterationsDone', () => {
+        network.focus('coordinator', { scale: 0.45, animation: false });
+      });
+      setTimeout(() => {
+        network.focus('coordinator', { scale: 0.45, animation: true });
+      }, 300);
+
+      // Click node → show detail panel
+      network.on('click', function(params) {
+        closeEdgePanel();
+        if (params.nodes.length > 0) {
+          const nodeId = params.nodes[0];
+          showNodePanel(nodeId, data);
+        } else if (params.edges.length > 0) {
+          closeNodePanel();
+          const edgeId = params.edges[0];
+          const edgeObj = network.body.data.edges.get(edgeId);
+          if (edgeObj && edgeObj._edgeData) {
+            showEdgePanel(edgeObj._edgeData, data);
+          }
+        } else {
+          closeNodePanel();
+        }
+      });
+
+      // Double-click → zoom to node
+      network.on('doubleClick', function(params) {
+        if (params.nodes.length > 0) {
+          network.focus(params.nodes[0], { scale: 1.5, animation: true });
+        }
+      });
+
+      // Fit button
+      document.getElementById('fit-btn').addEventListener('click', () => {
+        network.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+      });
+
+      // Physics toggle
+      const physBtn = document.getElementById('toggle-physics-btn');
+      physBtn.addEventListener('click', () => {
+        physicsEnabled = !physicsEnabled;
+        network.setOptions({ physics: { enabled: physicsEnabled } });
+        physBtn.textContent = 'Physics: ' + (physicsEnabled ? 'On' : 'Off');
+      });
+    }
+
+    function showNodePanel(nodeId, data) {
+      const node = data.nodes[nodeId];
+      if (!node) return;
+      const group = data.groups[node.group];
+      const panel = document.getElementById('panel');
+      const inner = document.getElementById('panel-inner');
+
+      let html = `<button class="close-btn" onclick="closeNodePanel()">&times;</button>`;
+      html += `<h2>${esc(node.label)}</h2>`;
+      html += `<span class="badge" style="background:${group.color}">${esc(group.label)}</span>`;
+
+      // Agent info
+      if (node.agent) {
+        const agent = data.agents[node.agent];
+        html += `<div class="section">
+          <h3>Agent</h3>
+          <div class="agent-card">
+            <div class="agent-name">${esc(agent.label)}</div>
+            <div class="agent-meta">Role: ${esc(agent.role)}</div>
+            <span class="context-tag">Context: ${esc(agent.context_mode)}</span>
+          </div>
+        </div>`;
+      }
+
+      // Function + file
+      if (node.function || node.file) {
+        html += `<div class="section"><h3>Source</h3>`;
+        if (node.function) html += `<p><code>${esc(node.function)}</code></p>`;
+        if (node.file) html += `<p style="color:#8b949e;font-size:12px;margin-top:4px">${esc(node.file)}</p>`;
+        html += `</div>`;
+      }
+
+      // Description
+      html += `<div class="section"><h3>Description</h3><p>${esc(node.description)}</p></div>`;
+
+      // Workflow prompt
+      if (node.prompt) {
+        html += `<div class="section"><h3>Workflow Prompt</h3><div class="prompt-block">${esc(node.prompt)}</div></div>`;
+      }
+
+      // Agent system prompt
+      if (node.agent && data.agents[node.agent].system_prompt) {
+        html += `<div class="section"><h3>Agent System Prompt</h3><div class="prompt-block">${esc(data.agents[node.agent].system_prompt)}</div></div>`;
+      }
+
+      // Connected edges
+      const incoming = data.edges.filter(e => e.to === nodeId);
+      const outgoing = data.edges.filter(e => e.from === nodeId);
+      if (incoming.length > 0 || outgoing.length > 0) {
+        html += `<div class="section"><h3>Connections</h3>`;
+        if (incoming.length > 0) {
+          html += `<p style="font-size:12px;color:#8b949e;margin-bottom:4px">Incoming:</p>`;
+          for (const e of incoming) {
+            const fromLabel = data.nodes[e.from]?.label || e.from;
+            html += `<p style="font-size:12px">&larr; <strong>${esc(fromLabel)}</strong>${e.label ? ' <span style="color:#8b949e">(' + esc(e.label) + ')</span>' : ''}</p>`;
+          }
+        }
+        if (outgoing.length > 0) {
+          html += `<p style="font-size:12px;color:#8b949e;margin-top:8px;margin-bottom:4px">Outgoing:</p>`;
+          for (const e of outgoing) {
+            const toLabel = data.nodes[e.to]?.label || e.to;
+            html += `<p style="font-size:12px">&rarr; <strong>${esc(toLabel)}</strong>${e.label ? ' <span style="color:#8b949e">(' + esc(e.label) + ')</span>' : ''}</p>`;
+          }
+        }
+        html += `</div>`;
+      }
+
+      inner.innerHTML = html;
+      panel.classList.add('open');
+    }
+
+    function showEdgePanel(edgeData, data) {
+      const panel = document.getElementById('edge-panel');
+      const inner = document.getElementById('edge-panel-inner');
+      const fromNode = data.nodes[edgeData.from];
+      const toNode = data.nodes[edgeData.to];
+
+      let html = `<button class="edge-close-btn" onclick="closeEdgePanel()">&times;</button>`;
+      html += `<h2>Edge</h2>`;
+      html += `<div class="section">
+        <p><strong>${esc(fromNode?.label || edgeData.from)}</strong></p>
+        <p style="color:#8b949e;font-size:20px;text-align:center">&darr;</p>
+        <p><strong>${esc(toNode?.label || edgeData.to)}</strong></p>
+      </div>`;
+      if (edgeData.label) {
+        html += `<div class="section"><h3>Condition</h3><p>${esc(edgeData.label)}</p></div>`;
+      }
+      if (edgeData.description) {
+        html += `<div class="section"><h3>Description</h3><p>${esc(edgeData.description)}</p></div>`;
+      }
+
+      inner.innerHTML = html;
+      panel.classList.add('open');
+    }
+
+    function closeNodePanel() {
+      document.getElementById('panel').classList.remove('open');
+    }
+    function closeEdgePanel() {
+      document.getElementById('edge-panel').classList.remove('open');
+    }
+
+    function esc(str) {
+      if (!str) return '';
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // Keyboard: Escape closes panels
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { closeNodePanel(); closeEdgePanel(); }
+      if (e.key === 'f' && !e.ctrlKey && !e.metaKey && document.activeElement === document.body) {
+        network?.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+      }
+    });
+  </script>
+</body>
+</html>
